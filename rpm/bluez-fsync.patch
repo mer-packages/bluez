@@ -1,0 +1,11 @@
+--- old/src/textfile.c	2011-07-11 15:32:09.267530417 +0800
++++ new/src/textfile.c	2011-07-11 15:33:27.207684113 +0800
+@@ -294,7 +294,7 @@
+ 	flock(fd, LOCK_UN);
+ 
+ close:
+-	fdatasync(fd);
++//	fdatasync(fd);
+ 
+ 	close(fd);
+ 	errno = err;

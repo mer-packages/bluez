@@ -1,14 +1,15 @@
 diff --git a/src/bluetooth.conf b/src/bluetooth.conf
-index 664dbd9..5b661d9 100644
+index 664dbd9..8dec0dd 100644
 --- a/src/bluetooth.conf
 +++ b/src/bluetooth.conf
-@@ -28,6 +28,11 @@
+@@ -28,6 +28,12 @@
      <allow send_destination="org.bluez"/>
    </policy>
  
-+  <!-- allow radio user (ofono) to communicate -->
++  <!-- allow radio user (ofono) signaling -->
 +  <policy user="radio">
 +    <allow send_destination="org.bluez"/>
++    <allow send_type="signal"/>
 +  </policy>
 +
    <policy context="default">

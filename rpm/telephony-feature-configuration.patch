@@ -1,0 +1,162 @@
+diff --git a/audio/manager.c b/audio/manager.c
+index d442d1d..9d8fa26 100644
+--- a/audio/manager.c
++++ b/audio/manager.c
+@@ -118,6 +118,44 @@ static struct enabled_interfaces enabled = {
+ 	.media		= TRUE,
+ };
+ 
++static void setup_telephony_ag_features(GKeyFile *config,
++					uint32_t *disabled)
++{
++	char **list;
++	int i;
++
++	*disabled = 0;
++
++	if (!config)
++		return;
++
++	list = g_key_file_get_string_list(config,
++					  "Telephony", "Disable",
++					  NULL, NULL);
++
++	for (i = 0; list && list[i] != NULL; i++) {
++		if (g_str_equal(list[i], "ThreeWayCalling"))
++			*disabled |= AG_FEATURE_THREE_WAY_CALLING;
++		else if (g_str_equal(list[i], "EC/NR"))
++			*disabled |= AG_FEATURE_EC_ANDOR_NR;
++		else if (g_str_equal(list[i], "VoiceRecognition"))
++			*disabled |= AG_FEATURE_VOICE_RECOGNITION;
++		else if (g_str_equal(list[i], "InBandRingtone"))
++			*disabled |= AG_FEATURE_INBAND_RINGTONE;
++		else if (g_str_equal(list[i], "VoiceTag"))
++			*disabled |= AG_FEATURE_ATTACH_NUMBER_TO_VOICETAG;
++		else if (g_str_equal(list[i], "CallReject"))
++			*disabled |= AG_FEATURE_REJECT_A_CALL;
++		else if (g_str_equal(list[i], "EnhancedCallStatus"))
++			*disabled |= AG_FEATURE_ENHANCED_CALL_STATUS;
++		else if (g_str_equal(list[i], "EnhancedCallControl"))
++			*disabled |= AG_FEATURE_ENHANCED_CALL_CONTROL;
++		else if (g_str_equal(list[i], "ExtendedErrorResultCodes"))
++			*disabled |= AG_FEATURE_EXTENDED_ERROR_RESULT_CODES;
++	}
++	g_strfreev(list);
++}
++
+ static struct audio_adapter *find_adapter(GSList *list,
+ 					struct btd_adapter *btd_adapter)
+ {
+@@ -876,10 +914,12 @@ static void state_changed(struct btd_adapter *adapter, gboolean powered)
+ 	adp->powered = powered;
+ 
+ 	if (powered) {
++		uint32_t disabled_features;
+ 		/* telephony driver already initialized*/
+ 		if (telephony == TRUE)
+ 			return;
+-		telephony_init();
++		setup_telephony_ag_features(config, &disabled_features);
++		telephony_init(disabled_features);
+ 		telephony = TRUE;
+ 		return;
+ 	}
+diff --git a/audio/telephony-dummy.c b/audio/telephony-dummy.c
+index 2f89139..c38ddb4 100644
+--- a/audio/telephony-dummy.c
++++ b/audio/telephony-dummy.c
+@@ -409,7 +409,7 @@ static const GDBusSignalTable dummy_signals[] = {
+ 	{ }
+ };
+ 
+-int telephony_init(void)
++int telephony_init(uint32_t disabled_features)
+ {
+ 	uint32_t features = AG_FEATURE_REJECT_A_CALL |
+ 				AG_FEATURE_ENHANCED_CALL_STATUS |
+@@ -417,6 +417,8 @@ int telephony_init(void)
+ 
+ 	DBG("");
+ 
++	features &= ~disabled_features;
++
+ 	connection = dbus_bus_get(DBUS_BUS_SYSTEM, NULL);
+ 
+ 	if (g_dbus_register_interface(connection, TELEPHONY_DUMMY_PATH,
+diff --git a/audio/telephony-maemo5.c b/audio/telephony-maemo5.c
+index 8a00296..05cdd00 100644
+--- a/audio/telephony-maemo5.c
++++ b/audio/telephony-maemo5.c
+@@ -2029,7 +2029,7 @@ static DBusHandlerResult signal_filter(DBusConnection *conn,
+ 	return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
+ }
+ 
+-int telephony_init(void)
++int telephony_init(uint32_t disabled_features)
+ {
+ 	const char *battery_cap = "battery";
+ 	uint32_t features = AG_FEATURE_EC_ANDOR_NR |
+@@ -2040,6 +2040,8 @@ int telephony_init(void)
+ 				AG_FEATURE_EXTENDED_ERROR_RESULT_CODES |
+ 				AG_FEATURE_THREE_WAY_CALLING;
+ 
++	features &= ~disabled_features;
++
+ 	connection = dbus_bus_get(DBUS_BUS_SYSTEM, NULL);
+ 
+ 	if (!dbus_connection_add_filter(connection, signal_filter,
+diff --git a/audio/telephony-maemo6.c b/audio/telephony-maemo6.c
+index 0727ffe..2a66ea8 100644
+--- a/audio/telephony-maemo6.c
++++ b/audio/telephony-maemo6.c
+@@ -2115,7 +2115,7 @@ done:
+ 	remove_pending(call);
+ }
+ 
+-int telephony_init(void)
++int telephony_init(uint32_t disabled_features)
+ {
+ 	const char *battery_cap = "battery";
+ 	uint32_t features = AG_FEATURE_EC_ANDOR_NR |
+@@ -2129,6 +2129,8 @@ int telephony_init(void)
+ 
+ 	DBG("");
+ 
++	features &= ~disabled_features;
++
+ 	connection = dbus_bus_get(DBUS_BUS_SYSTEM, NULL);
+ 
+ 	add_watch(NULL, NULL, CSD_CALL_INTERFACE, NULL);
+diff --git a/audio/telephony-ofono.c b/audio/telephony-ofono.c
+index 961fedd..4ed7c63 100644
+--- a/audio/telephony-ofono.c
++++ b/audio/telephony-ofono.c
+@@ -1544,7 +1544,7 @@ static void handle_service_disconnect(DBusConnection *conn, void *user_data)
+ 		modem_removed(modem_obj_path);
+ }
+ 
+-int telephony_init(void)
++int telephony_init(uint32_t disabled_features)
+ {
+ 	uint32_t features = AG_FEATURE_EC_ANDOR_NR |
+ 				AG_FEATURE_INBAND_RINGTONE |
+@@ -1557,6 +1557,8 @@ int telephony_init(void)
+ 	int ret;
+ 	guint watch;
+ 
++	features &= ~disabled_features;
++
+ 	connection = dbus_bus_get(DBUS_BUS_SYSTEM, NULL);
+ 
+ 	add_watch(OFONO_BUS_NAME, NULL, OFONO_MODEM_INTERFACE,
+diff --git a/audio/telephony.h b/audio/telephony.h
+index 73b390c..d065e18 100644
+--- a/audio/telephony.h
++++ b/audio/telephony.h
+@@ -240,5 +240,5 @@ static inline int telephony_get_indicator(const struct indicator *indicators,
+ 	return -ENOENT;
+ }
+ 
+-int telephony_init(void);
++int telephony_init(uint32_t disabled_features);
+ void telephony_exit(void);

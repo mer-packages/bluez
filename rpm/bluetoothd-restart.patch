@@ -1,0 +1,12 @@
+diff --git a/src/bluetooth.service.in b/src/bluetooth.service.in
+index 2a576a3..b4927bc 100644
+--- a/src/bluetooth.service.in
++++ b/src/bluetooth.service.in
+@@ -5,6 +5,7 @@ Description=Bluetooth service
+ Type=dbus
+ BusName=org.bluez
+ ExecStart=@prefix@/sbin/bluetoothd -n
++Restart=on-failure
+ 
+ [Install]
+ WantedBy=bluetooth.target

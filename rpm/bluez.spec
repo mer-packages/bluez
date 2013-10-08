@@ -27,6 +27,7 @@ Patch7:     allow-ofono-communication.patch
 Patch8:     telephony-feature-configuration.patch
 Patch9:     AVRCP-feature-configuration.patch
 Patch10:    bluetoothd-restart.patch
+Patch11:    statefs-battery-charge.patch
 Requires:   bluez-libs = %{version}
 Requires:   dbus >= 0.60
 Requires:   hwdata >= 0.215
@@ -167,6 +168,8 @@ This package provides default configs for bluez
 %patch9 -p1
 # bluetoothd-restart.patch
 %patch10 -p1
+# statefs-battery-charge.patch
+%patch11 -p1
 # >> setup
 # << setup
 

@@ -29,6 +29,7 @@ Patch9:     AVRCP-feature-configuration.patch
 Patch10:    bluetoothd-restart.patch
 Patch11:    statefs-battery-charge.patch
 Patch12:    telephony-last-dialed.patch
+Patch13:    telephony-signal-strength-indicator.patch
 Requires:   bluez-libs = %{version}
 Requires:   dbus >= 0.60
 Requires:   hwdata >= 0.215
@@ -173,6 +174,8 @@ This package provides default configs for bluez
 %patch11 -p1
 # telephony-last-dialed.patch
 %patch12 -p1
+# telephony-signal-strength-indicator.patch
+%patch13 -p1
 # >> setup
 # << setup
 

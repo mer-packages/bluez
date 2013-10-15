@@ -31,6 +31,7 @@ Patch11:    statefs-battery-charge.patch
 Patch12:    telephony-last-dialed.patch
 Patch13:    telephony-signal-strength-indicator.patch
 Patch14:    telephony-call-hold-handling.patch
+Patch15:    telephony-call-hold-handling-take-two.patch
 Requires:   bluez-libs = %{version}
 Requires:   dbus >= 0.60
 Requires:   hwdata >= 0.215
@@ -179,6 +180,8 @@ This package provides default configs for bluez
 %patch13 -p1
 # telephony-call-hold-handling.patch
 %patch14 -p1
+# telephony-call-hold-handling-take-two.patch
+%patch15 -p1
 # >> setup
 # << setup
 

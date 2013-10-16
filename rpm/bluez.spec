@@ -19,19 +19,18 @@ Source100:  bluez.yaml
 Patch0:     bluez-fsync.patch
 Patch1:     remove-duplicate-wrong-udev-rule-for-dell-mice.patch
 Patch2:     enable_HFP.patch
-Patch3:     powered.patch
-Patch4:     install-more-binary-test.patch
-Patch5:     install-test-scripts.patch
-Patch6:     0001-Adding-snowball-target-and-line-disc.patch
-Patch7:     allow-ofono-communication.patch
-Patch8:     telephony-feature-configuration.patch
-Patch9:     AVRCP-feature-configuration.patch
-Patch10:    bluetoothd-restart.patch
-Patch11:    statefs-battery-charge.patch
-Patch12:    telephony-last-dialed.patch
-Patch13:    telephony-signal-strength-indicator.patch
-Patch14:    telephony-call-hold-handling.patch
-Patch15:    telephony-call-hold-handling-take-two.patch
+Patch3:     install-more-binary-test.patch
+Patch4:     install-test-scripts.patch
+Patch5:     0001-Adding-snowball-target-and-line-disc.patch
+Patch6:     allow-ofono-communication.patch
+Patch7:     telephony-feature-configuration.patch
+Patch8:     AVRCP-feature-configuration.patch
+Patch9:    bluetoothd-restart.patch
+Patch10:    statefs-battery-charge.patch
+Patch11:    telephony-last-dialed.patch
+Patch12:    telephony-signal-strength-indicator.patch
+Patch13:    telephony-call-hold-handling.patch
+Patch14:    telephony-call-hold-handling-take-two.patch
 Requires:   bluez-libs = %{version}
 Requires:   dbus >= 0.60
 Requires:   hwdata >= 0.215
@@ -156,32 +155,30 @@ This package provides default configs for bluez
 %patch1 -p1
 # enable_HFP.patch
 %patch2 -p1
-# powered.patch
-%patch3 -p1
 # install-more-binary-test.patch
-%patch4 -p1
+%patch3 -p1
 # install-test-scripts.patch
-%patch5 -p1
+%patch4 -p1
 # 0001-Adding-snowball-target-and-line-disc.patch
-%patch6 -p1
+%patch5 -p1
 # allow-ofono-communication.patch
-%patch7 -p1
+%patch6 -p1
 # telephony-feature-configuration.patch
-%patch8 -p1
+%patch7 -p1
 # AVRCP-feature-configuration.patch
-%patch9 -p1
+%patch8 -p1
 # bluetoothd-restart.patch
-%patch10 -p1
+%patch9 -p1
 # statefs-battery-charge.patch
-%patch11 -p1
+%patch10 -p1
 # telephony-last-dialed.patch
-%patch12 -p1
+%patch11 -p1
 # telephony-signal-strength-indicator.patch
-%patch13 -p1
+%patch12 -p1
 # telephony-call-hold-handling.patch
-%patch14 -p1
+%patch13 -p1
 # telephony-call-hold-handling-take-two.patch
-%patch15 -p1
+%patch14 -p1
 # >> setup
 # << setup
 

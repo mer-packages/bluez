@@ -1,0 +1,137 @@
+diff -Naur bluez.orig/plugins/hciops.c bluez/plugins/hciops.c
+--- bluez.orig/plugins/hciops.c	2013-10-15 15:20:34.114248368 +0300
++++ bluez/plugins/hciops.c	2013-10-16 09:41:17.129094322 +0300
+@@ -2931,6 +2931,28 @@
+ 	}
+ }
+ 
++static int hciops_init_adapter(int index, gboolean already_up)
++{
++	struct dev_info *dev;
++
++	dev = init_device(index, already_up);
++	if (dev == NULL)
++		return -1;
++
++	if (!dev->already_up)
++		return 0;
++
++	init_conn_list(index);
++
++	dev->pending = 0;
++	hci_set_bit(PENDING_VERSION, &dev->pending);
++	hci_send_cmd(dev->sk, OGF_INFO_PARAM,
++		OCF_READ_LOCAL_VERSION, 0, NULL);
++	device_event(HCI_DEV_UP, index);
++
++	return 0;
++}
++
+ static gboolean init_known_adapters(gpointer user_data)
+ {
+ 	struct hci_dev_list_req *dl;
+@@ -2959,25 +2981,9 @@
+ 	}
+ 
+ 	for (i = 0; i < dl->dev_num; i++, dr++) {
+-		struct dev_info *dev;
+ 		gboolean already_up;
+-
+ 		already_up = hci_test_bit(HCI_UP, &dr->dev_opt);
+-
+-		dev = init_device(dr->dev_id, already_up);
+-		if (dev == NULL)
+-			continue;
+-
+-		if (!dev->already_up)
+-			continue;
+-
+-		init_conn_list(dr->dev_id);
+-
+-		dev->pending = 0;
+-		hci_set_bit(PENDING_VERSION, &dev->pending);
+-		hci_send_cmd(dev->sk, OGF_INFO_PARAM,
+-					OCF_READ_LOCAL_VERSION, 0, NULL);
+-		device_event(HCI_DEV_UP, dr->dev_id);
++		hciops_init_adapter(dr->dev_id, already_up);
+ 	}
+ 
+ 	g_free(dl);
+@@ -3925,6 +3931,7 @@
+ 	.remove_remote_oob_data = hciops_remove_remote_oob_data,
+ 	.confirm_name = hciops_confirm_name,
+ 	.load_ltks = hciops_load_ltks,
++	.initialize = hciops_init_adapter
+ };
+ 
+ static int hciops_init(void)
+diff -Naur bluez.orig/plugins/mgmtops.c bluez/plugins/mgmtops.c
+--- bluez.orig/plugins/mgmtops.c	2013-10-15 15:20:34.114248368 +0300
++++ bluez/plugins/mgmtops.c	2013-10-16 09:46:42.525082098 +0300
+@@ -2471,6 +2471,11 @@
+ 	return err;
+ }
+ 
++static int mgmtops_init_adapter(int index, gboolean already_up)
++{
++	return -1; /* not implemented */
++}
++
+ static struct btd_adapter_ops mgmt_ops = {
+ 	.setup = mgmt_setup,
+ 	.cleanup = mgmt_cleanup,
+@@ -2507,6 +2512,7 @@
+ 	.remove_remote_oob_data = mgmt_remove_remote_oob_data,
+ 	.confirm_name = mgmt_confirm_name,
+ 	.load_ltks = mgmtops_load_ltks,
++	.initialize = mgmtops_init_adapter
+ };
+ 
+ static int mgmt_init(void)
+diff -Naur bluez.orig/src/adapter.c bluez/src/adapter.c
+--- bluez.orig/src/adapter.c	2013-10-15 15:20:34.118248368 +0300
++++ bluez/src/adapter.c	2013-10-16 09:40:15.817096625 +0300
+@@ -3578,3 +3578,8 @@
+ {
+ 	return adapter_ops->remove_remote_oob_data(adapter->dev_id, bdaddr);
+ }
++
++int btd_adapter_initialize(int id)
++{
++	return adapter_ops->initialize(id, FALSE);
++}
+diff -Naur bluez.orig/src/adapter.h bluez/src/adapter.h
+--- bluez.orig/src/adapter.h	2013-10-15 15:20:34.118248368 +0300
++++ bluez/src/adapter.h	2013-10-16 09:40:25.433096264 +0300
+@@ -220,6 +220,8 @@
+ 	int (*confirm_name) (int index, bdaddr_t *bdaddr, uint8_t bdaddr_type,
+ 							gboolean name_known);
+ 	int (*load_ltks) (int index, GSList *keys);
++
++	int (*initialize) (int index, gboolean already_up);
+ };
+ 
+ int btd_register_adapter_ops(struct btd_adapter_ops *ops, gboolean priority);
+@@ -286,3 +288,5 @@
+ 
+ int btd_adapter_gatt_server_start(struct btd_adapter *adapter);
+ void btd_adapter_gatt_server_stop(struct btd_adapter *adapter);
++
++int btd_adapter_initialize(int id);
+diff -Naur bluez.orig/src/rfkill.c bluez/src/rfkill.c
+--- bluez.orig/src/rfkill.c	2013-10-15 15:20:34.118248368 +0300
++++ bluez/src/rfkill.c	2013-10-16 09:34:52.013108789 +0300
+@@ -129,8 +129,12 @@
+ 		return TRUE;
+ 
+ 	adapter = manager_find_adapter_by_id(id);
+-	if (!adapter)
++	if (!adapter) {
++		DBG("Adapter %d rfkilled since start, initializing.", id);
++		if (btd_adapter_initialize(id) != 0)
++			DBG("Initializing adapter %d failed.", id);
+ 		return TRUE;
++	}
+ 
+ 	DBG("RFKILL unblock for hci%d", id);
+ 

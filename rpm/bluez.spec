@@ -25,12 +25,13 @@ Patch5:     0001-Adding-snowball-target-and-line-disc.patch
 Patch6:     allow-ofono-communication.patch
 Patch7:     telephony-feature-configuration.patch
 Patch8:     AVRCP-feature-configuration.patch
-Patch9:    bluetoothd-restart.patch
+Patch9:     bluetoothd-restart.patch
 Patch10:    statefs-battery-charge.patch
 Patch11:    telephony-last-dialed.patch
 Patch12:    telephony-signal-strength-indicator.patch
 Patch13:    telephony-call-hold-handling.patch
 Patch14:    telephony-call-hold-handling-take-two.patch
+Patch15:    bluetoothd-handle-rfkilled-adapter.patch
 Requires:   bluez-libs = %{version}
 Requires:   dbus >= 0.60
 Requires:   hwdata >= 0.215
@@ -179,6 +180,8 @@ This package provides default configs for bluez
 %patch13 -p1
 # telephony-call-hold-handling-take-two.patch
 %patch14 -p1
+# bluetoothd-handle-rfkilled-adapter.patch
+%patch15 -p1
 # >> setup
 # << setup
 

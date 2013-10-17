@@ -75,7 +75,6 @@ The BLUETOOTH trademarks are owned by Bluetooth SIG, Inc., U.S.A.
 %package libs
 Summary:    Libraries for use in Bluetooth applications
 Group:      System/Libraries
-Requires:   %{name} = %{version}-%{release}
 Requires(post): /sbin/ldconfig
 Requires(postun): /sbin/ldconfig
 

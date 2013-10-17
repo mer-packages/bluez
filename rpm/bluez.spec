@@ -85,7 +85,6 @@ Libraries for use in Bluetooth applications.
 %package libs-devel
 Summary:    Development libraries for Bluetooth applications
 Group:      Development/Libraries
-Requires:   %{name} = %{version}-%{release}
 Requires:   bluez-libs = %{version}
 
 %description libs-devel

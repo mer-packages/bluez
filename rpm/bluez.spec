@@ -6,6 +6,7 @@
 Name:       bluez
 
 # >> macros
+%define _system_groupadd() getent group %{1} >/dev/null || groupadd -r %{1}
 # << macros
 
 Summary:    Bluetooth utilities
@@ -38,6 +39,8 @@ Requires:   hwdata >= 0.215
 Requires:   bluez-configs
 Requires:   systemd
 Requires:   ofono
+Requires:   oneshot
+Requires(pre): /usr/sbin/groupadd
 Requires(preun): systemd
 Requires(post): systemd
 Requires(postun): systemd
@@ -146,7 +149,6 @@ Provides:   bluez-configs
 %description configs-mer
 This package provides default configs for bluez
 
-
 %prep
 %setup -q -n %{name}-%{version}/%{name}
 
@@ -236,12 +238,16 @@ done
 # << install post
 
 
+%pre
+%_system_groupadd bluetooth
+
 %preun
 if [ "$1" -eq 0 ]; then
 systemctl stop bluetooth.service
 fi
 
 %post
+%{_bindir}/groupadd-user bluetooth
 systemctl daemon-reload
 systemctl reload-or-try-restart bluetooth.service
 

@@ -33,6 +33,7 @@ Patch12:    telephony-signal-strength-indicator.patch
 Patch13:    telephony-call-hold-handling.patch
 Patch14:    telephony-call-hold-handling-take-two.patch
 Patch15:    bluetoothd-handle-rfkilled-adapter.patch
+Patch16:    AVDTP-stream-abort-handling.patch
 Requires:   bluez-libs = %{version}
 Requires:   dbus >= 0.60
 Requires:   hwdata >= 0.215
@@ -182,6 +183,8 @@ This package provides default configs for bluez
 %patch14 -p1
 # bluetoothd-handle-rfkilled-adapter.patch
 %patch15 -p1
+# AVDTP-stream-abort-handling.patch
+%patch16 -p1
 # >> setup
 # << setup
 

@@ -34,6 +34,7 @@ Patch13:    telephony-call-hold-handling.patch
 Patch14:    telephony-call-hold-handling-take-two.patch
 Patch15:    bluetoothd-handle-rfkilled-adapter.patch
 Patch16:    AVDTP-stream-abort-handling.patch
+Patch17:    HFP-memory-dial-last-dialed-number.patch
 Requires:   bluez-libs = %{version}
 Requires:   dbus >= 0.60
 Requires:   hwdata >= 0.215
@@ -185,6 +186,8 @@ This package provides default configs for bluez
 %patch15 -p1
 # AVDTP-stream-abort-handling.patch
 %patch16 -p1
+# HFP-memory-dial-last-dialed-number.patch
+%patch17 -p1
 # >> setup
 # << setup
 

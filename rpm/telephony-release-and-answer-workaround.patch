@@ -1,0 +1,91 @@
+diff -Naur bluez.orig/audio/telephony-ofono.c bluez/audio/telephony-ofono.c
+--- bluez.orig/audio/telephony-ofono.c	2013-10-28 16:50:47.691579277 +0200
++++ bluez/audio/telephony-ofono.c	2013-10-29 10:46:02.363072187 +0200
+@@ -55,6 +55,7 @@
+ 	guint watch;
+ 
+ 	gboolean hold_status_pending;
++	gboolean waiting_for_answer;
+ };
+ 
+ static DBusConnection *connection = NULL;
+@@ -110,6 +111,24 @@
+ 	{ NULL }
+ };
+ 
++static void waiting_for_answer_clear(struct voice_call *vc)
++{
++	DBG("");
++	vc->waiting_for_answer = FALSE;
++}
++
++static void waiting_for_answer_set(struct voice_call *vc)
++{
++	DBG("");
++	vc->waiting_for_answer = TRUE;
++}
++
++static gboolean waiting_for_answer_is_set(struct voice_call *vc)
++{
++	DBG("");
++	return vc->waiting_for_answer;
++}
++
+ static void hold_status_clear(struct voice_call *vc)
+ {
+ 	vc->hold_status_pending = FALSE;
+@@ -322,13 +341,39 @@
+ 						NULL, NULL, DBUS_TYPE_INVALID);
+ }
+ 
++static void answer_waiting_call(void)
++{
++	GSList *l;
++
++	for (l = calls; l != NULL; l = l->next) {
++		struct voice_call *vc = l->data;
++		if (waiting_for_answer_is_set(vc) == TRUE) {
++			waiting_for_answer_clear(vc);
++			answer_call(vc);
++			break;
++		}
++	}
++}
++
+ static int release_answer_calls(void)
+ {
+-	DBG("%s", modem_obj_path);
+-	return send_method_call(OFONO_BUS_NAME, modem_obj_path,
+-						OFONO_VCMANAGER_INTERFACE,
+-						"ReleaseAndAnswer",
+-						NULL, NULL, DBUS_TYPE_INVALID);
++	struct voice_call *active = NULL;
++	struct voice_call *waiting = NULL;
++
++	DBG("");
++
++	active = find_vc_with_status(CALL_STATUS_ACTIVE);
++	waiting = find_vc_with_status(CALL_STATUS_WAITING);
++	if (active == NULL || waiting == NULL)
++		return -EIO;
++
++	/* Answer this call when the current call has disconnected */
++	waiting_for_answer_set(waiting);
++
++	return send_method_call(OFONO_BUS_NAME, active->obj_path,
++						OFONO_VC_INTERFACE, "Hangup",
++						NULL, NULL,
++						DBUS_TYPE_INVALID);
+ }
+ 
+ static int release_swap_calls(void)
+@@ -874,6 +919,9 @@
+ 		if (g_str_equal(state, "disconnected")) {
+ 			calls = g_slist_remove(calls, vc);
+ 			call_free(vc);
++			/* Answer waiting call if the disconnect was part
++			   of release and answer (AT+CHLD=1) processing */
++			answer_waiting_call();
+ 		} else if (g_str_equal(state, "active")) {
+ 			telephony_update_indicator(ofono_indicators,
+ 							"call", EV_CALL_ACTIVE);

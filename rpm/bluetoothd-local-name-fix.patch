@@ -1,0 +1,40 @@
+diff -Naur bluez.orig/plugins/hciops.c bluez/plugins/hciops.c
+--- bluez.orig/plugins/hciops.c	2013-10-30 09:33:52.481785668 +0000
++++ bluez/plugins/hciops.c	2013-10-30 12:44:35.422210692 +0000
+@@ -1623,6 +1623,22 @@
+ 	update_ext_inquiry_response(index);
+ }
+ 
++static gboolean read_local_name_cb(gpointer data)
++{
++	int index = GPOINTER_TO_INT(data);
++	struct dev_info *dev = &devs[index];
++
++	DBG("hci%d checking local name pending status", index);
++
++	if (hci_test_bit(PENDING_NAME, &dev->pending)) {
++		DBG("Local name read still pending, forcing. ");
++		hci_send_cmd(dev->sk, OGF_HOST_CTL,
++					OCF_READ_LOCAL_NAME, 0, 0);
++	}
++
++	return FALSE;
++}
++
+ static void read_local_name_complete(int index, read_local_name_rp *rp)
+ {
+ 	struct dev_info *dev = &devs[index];
+@@ -2769,9 +2785,10 @@
+ 		hci_send_cmd(dev->sk, OGF_INFO_PARAM,
+ 					OCF_READ_LOCAL_VERSION, 0, NULL);
+ 
+-	if (hci_test_bit(PENDING_NAME, &dev->pending))
+-		hci_send_cmd(dev->sk, OGF_HOST_CTL,
+-					OCF_READ_LOCAL_NAME, 0, 0);
++	if (hci_test_bit(PENDING_NAME, &dev->pending)) {
++		DBG("Pending local name query");
++		g_timeout_add(3000, read_local_name_cb, GINT_TO_POINTER(index));
++	}
+ 
+ 	if (hci_test_bit(PENDING_BDADDR, &dev->pending))
+ 		hci_send_cmd(dev->sk, OGF_INFO_PARAM,

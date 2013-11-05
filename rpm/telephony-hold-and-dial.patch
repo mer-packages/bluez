@@ -1,0 +1,74 @@
+diff -Naur bluez.orig/audio/telephony-ofono.c bluez/audio/telephony-ofono.c
+--- bluez.orig/audio/telephony-ofono.c	2013-11-05 15:46:19.221900426 +0800
++++ bluez/audio/telephony-ofono.c	2013-11-05 16:59:42.747152944 +0800
+@@ -56,6 +56,8 @@
+ 
+ 	gboolean status_pending;
+ 	gboolean waiting_for_answer;
++	gchar *hold_dial_clir;
++	gchar *hold_dial_number;
+ };
+ 
+ static DBusConnection *connection = NULL;
+@@ -511,6 +513,7 @@
+ 
+ void telephony_dial_number_req(void *telephony_device, const char *number)
+ {
++	struct voice_call *vc = NULL;
+ 	const char *clir;
+ 	int ret;
+ 
+@@ -553,6 +556,22 @@
+ 	} else
+ 		clir = "default";
+ 
++	vc = find_vc_with_status(CALL_STATUS_ACTIVE);
++	if (vc != NULL && g_slist_length(calls) == 1) {
++		DBG("Explicitly holding current call before dialing");
++		g_free(vc->hold_dial_number);
++		vc->hold_dial_number = g_strdup(number);
++		g_free(vc->hold_dial_clir);
++		vc->hold_dial_clir = g_strdup(clir);
++		if (swap_calls() != 0)
++			telephony_dial_number_rsp(telephony_device,
++						CME_ERROR_AG_FAILURE);
++		else
++			telephony_dial_number_rsp(telephony_device,
++						CME_ERROR_NONE);
++		return;
++	}
++
+ 	ret = send_method_call(OFONO_BUS_NAME, modem_obj_path,
+ 			OFONO_VCMANAGER_INTERFACE,
+                         "Dial", NULL, NULL,
+@@ -863,6 +882,8 @@
+ 	g_dbus_remove_watch(connection, vc->watch);
+ 	g_free(vc->obj_path);
+ 	g_free(vc->number);
++	g_free(vc->hold_dial_clir);
++	g_free(vc->hold_dial_number);
+ 	memset(vc, 0, sizeof(struct voice_call));
+ 	g_free(vc);
+ }
+@@ -969,6 +990,21 @@
+ 			vc->originating = FALSE;
+ 		} else if (g_str_equal(state, "held")) {
+ 			vc->status = CALL_STATUS_HELD;
++			/* in case we have pending dial, do it now */
++			if (vc->hold_dial_number != NULL) {
++				gchar *clir = vc->hold_dial_clir;
++				gchar *number = vc->hold_dial_number;
++				vc->hold_dial_clir = NULL;
++				vc->hold_dial_number = NULL;
++				send_method_call(OFONO_BUS_NAME, modem_obj_path,
++						OFONO_VCMANAGER_INTERFACE,
++						"Dial", NULL, NULL,
++						DBUS_TYPE_STRING, &number,
++						DBUS_TYPE_STRING, &clir,
++						DBUS_TYPE_INVALID);
++				g_free(clir);
++				g_free(number);
++			}
+ 		}
+ 		update_held_status();
+ 	} else if (g_str_equal(property, "Multiparty")) {

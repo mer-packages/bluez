@@ -39,6 +39,7 @@ Patch18:    telephony-no-sporadic-hold-indicators.patch
 Patch19:    telephony-release-and-answer-workaround.patch
 Patch20:    bluetoothd-local-name-fix.patch
 Patch21:    telephony-no-sporadic-call-status-indicators.patch
+Patch22:    telephony-hold-and-dial.patch
 Requires:   bluez-libs = %{version}
 Requires:   dbus >= 0.60
 Requires:   hwdata >= 0.215
@@ -200,6 +201,8 @@ This package provides default configs for bluez
 %patch20 -p1
 # telephony-no-sporadic-call-status-indicators.patch
 %patch21 -p1
+# telephony-hold-and-dial.patch
+%patch22 -p1
 # >> setup
 # << setup
 

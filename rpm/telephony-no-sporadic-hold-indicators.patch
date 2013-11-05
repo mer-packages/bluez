@@ -10,14 +10,8 @@ diff -Naur bluez.orig/audio/telephony-ofono.c bluez/audio/telephony-ofono.c
  };
  
  static DBusConnection *connection = NULL;
-@@ -103,11 +105,39 @@
- 	{ "service",	"0,1",	1,	TRUE },
- 	{ "call",	"0,1",	0,	TRUE },
- 	{ "callsetup",	"0-3",	0,	TRUE },
--	{ "callheld",	"0-2",	0,	FALSE },
-+	{ "callheld",	"0-2",	0,	TRUE },
- 	{ "roam",	"0,1",	0,	TRUE },
- 	{ NULL }
+@@ -108,6 +110,34 @@
+	{ NULL }
  };
  
 +static void hold_status_clear(struct voice_call *vc)

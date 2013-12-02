@@ -1,0 +1,69 @@
+commit b15cef187a59ee64cef07a3b30561dd95787f662
+Author: Luiz Augusto von Dentz <luiz.von.dentz@intel.com>
+Date:   Mon Oct 14 13:14:45 2013 +0300
+
+    audio/AVDTP: Fix crash after disconnecting
+    
+    If the session is disconnected while process_discover is pending the
+    source id is not removed causing the following crash:
+          at 0x414C08: finalize_discovery (avdtp.c:1050)
+          by 0x414C5A: process_discover (avdtp.c:3346)
+          by 0x3D46047E05: g_main_context_dispatch (in /usr/lib64/libglib-2.0.so.0.3600.3)
+          by 0x3D46048157: ??? (in /usr/lib64/libglib-2.0.so.0.3600.3)
+          by 0x3D46048559: g_main_loop_run (in /usr/lib64/libglib-2.0.so.0.3600.3)
+          by 0x40A3B6: main (main.c:595)
+        Address 0x5e25de8 is 1,144 bytes inside a block of size 1,176 free'd
+        at 0x4A074C4: free (in
+        /usr/lib64/valgrind/vgpreload_memcheck-amd64-linux.so)
+          by 0x3D4604D9AE: g_free (in /usr/lib64/libglib-2.0.so.0.3600.3)
+          by 0x4152F2: connection_lost (avdtp.c:1206)
+          by 0x4162C4: cancel_request (avdtp.c:2662)
+          by 0x4164BD: request_timeout (avdtp.c:2672)
+          by 0x3D46048962: ??? (in /usr/lib64/libglib-2.0.so.0.3600.3)
+          by 0x3D46047E05: g_main_context_dispatch (in /usr/lib64/libglib-2.0.so.0.3600.3)
+          by 0x3D46048157: ??? (in /usr/lib64/libglib-2.0.so.0.3600.3)
+          by 0x3D46048559: g_main_loop_run (in /usr/lib64/libglib-2.0.so.0.3600.3)
+          by 0x40A3B6: main (main.c:595)
+
+diff --git a/profiles/audio/avdtp.c b/profiles/audio/avdtp.c
+index 622dff8..57e644c 100644
+--- a/profiles/audio/avdtp.c
++++ b/profiles/audio/avdtp.c
+@@ -412,6 +412,7 @@ struct avdtp {
+ 
+ 	char *buf;
+ 
++	guint discov_id;
+ 	avdtp_discover_cb_t discov_cb;
+ 	void *user_data;
+ 
+@@ -1048,6 +1049,11 @@ static void finalize_discovery(struct avdtp *session, int err)
+ 	if (!session->discov_cb)
+ 		return;
+ 
++	if (session->discov_id > 0) {
++		g_source_remove(session->discov_id);
++		session->discov_id = 0;
++	}
++
+ 	session->discov_cb(session, session->seps,
+ 				err ? &avdtp_err : NULL,
+ 				session->user_data);
+@@ -3322,6 +3328,8 @@ static gboolean process_discover(gpointer data)
+ {
+ 	struct avdtp *session = data;
+ 
++	session->discov_id = 0;
++
+ 	finalize_discovery(session, 0);
+ 
+ 	return FALSE;
+@@ -3338,7 +3346,7 @@ int avdtp_discover(struct avdtp *session, avdtp_discover_cb_t cb,
+ 	if (session->seps) {
+ 		session->discov_cb = cb;
+ 		session->user_data = user_data;
+-		g_idle_add(process_discover, session);
++		session->discov_id = g_idle_add(process_discover, session);
+ 		return 0;
+ 	}
+ 

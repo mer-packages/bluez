@@ -41,6 +41,7 @@ Patch20:    bluetoothd-local-name-fix.patch
 Patch21:    telephony-no-sporadic-call-status-indicators.patch
 Patch22:    telephony-hold-and-dial.patch
 Patch23:    bluetoothd-startup-dbus-crash-fix.patch
+Patch24:    AVDTP-fix-crash-after-disconnecting.patch
 Requires:   bluez-libs = %{version}
 Requires:   dbus >= 0.60
 Requires:   hwdata >= 0.215
@@ -206,6 +207,8 @@ This package provides default configs for bluez
 %patch22 -p1
 # bluetoothd-startup-dbus-crash-fix.patch
 %patch23 -p1
+# AVDTP-fix-crash-after-disconnecting.patch
+%patch24 -p2
 # >> setup
 # << setup
 

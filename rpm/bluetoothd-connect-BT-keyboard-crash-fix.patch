@@ -1,0 +1,17 @@
+diff -Naur bluez.orig/lib/hci.h bluez/lib/hci.h
+--- bluez.orig/lib/hci.h	2013-12-13 14:51:27.254925000 +0800
++++ bluez/lib/hci.h	2013-12-13 16:19:52.000000000 +0800
+@@ -2346,6 +2346,13 @@
+ 	uint8_t	 out;
+ 	uint16_t state;
+ 	uint32_t link_mode;
++	
++	/*Add below member due to Qcomm linux kernel change*/
++	uint32_t    mtu;
++	uint32_t    cnt;
++	uint32_t    pkts;
++	uint8_t     pending_sec_level;
++	uint8_t     ssp_mode;
+ };
+ 
+ struct hci_dev_req {

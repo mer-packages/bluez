@@ -43,6 +43,7 @@ Patch22:    telephony-hold-and-dial.patch
 Patch23:    bluetoothd-startup-dbus-crash-fix.patch
 Patch24:    AVDTP-fix-crash-after-disconnecting.patch
 Patch25:    AVCTP-initialize-uinput-fd.patch
+Patch26:    HFP-feature-advertisment.patch
 Requires:   bluez-libs = %{version}
 Requires:   dbus >= 0.60
 Requires:   hwdata >= 0.215
@@ -212,6 +213,8 @@ This package provides default configs for bluez
 %patch24 -p2
 # AVCTP-initialize-uinput-fd.patch
 %patch25 -p1
+# HFP-feature-advertisment.patch
+%patch26 -p1
 # >> setup
 # << setup
 

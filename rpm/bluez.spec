@@ -45,6 +45,7 @@ Patch24:    AVDTP-fix-crash-after-disconnecting.patch
 Patch25:    AVCTP-initialize-uinput-fd.patch
 Patch26:    HFP-feature-advertisment.patch
 Patch27:    bluetoothd-connect-BT-keyboard-crash-fix.patch
+Patch28:    AVCTP-handle-simultaneous-connections.patch
 Requires:   bluez-libs = %{version}
 Requires:   dbus >= 0.60
 Requires:   hwdata >= 0.215
@@ -218,6 +219,8 @@ This package provides default configs for bluez
 %patch26 -p1
 # bluetoothd-connect-BT-keyboard-crash-fix.patch
 %patch27 -p1
+# AVCTP-handle-simultaneous-connections.patch
+%patch28 -p1
 # >> setup
 # << setup
 

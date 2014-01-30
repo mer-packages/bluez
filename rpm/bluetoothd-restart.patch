@@ -1,8 +1,13 @@
 diff --git a/src/bluetooth.service.in b/src/bluetooth.service.in
-index 2a576a3..b4927bc 100644
+index 2a576a3..c277dc7 100644
 --- a/src/bluetooth.service.in
 +++ b/src/bluetooth.service.in
-@@ -5,6 +5,7 @@ Description=Bluetooth service
+@@ -1,10 +1,12 @@
+ [Unit]
+ Description=Bluetooth service
++After=connman.service
+ 
+ [Service]
  Type=dbus
  BusName=org.bluez
  ExecStart=@prefix@/sbin/bluetoothd -n
@@ -10,3 +15,4 @@ index 2a576a3..b4927bc 100644
  
  [Install]
  WantedBy=bluetooth.target
+

@@ -26,7 +26,7 @@ Patch5:     0001-Adding-snowball-target-and-line-disc.patch
 Patch6:     allow-ofono-communication.patch
 Patch7:     telephony-feature-configuration.patch
 Patch8:     AVRCP-feature-configuration.patch
-Patch9:     bluetoothd-restart.patch
+Patch9:     bluetoothd-service.patch
 Patch10:    statefs-battery-charge.patch
 Patch11:    telephony-last-dialed.patch
 Patch12:    telephony-signal-strength-indicator.patch
@@ -182,7 +182,7 @@ This package provides default configs for bluez
 %patch7 -p1
 # AVRCP-feature-configuration.patch
 %patch8 -p1
-# bluetoothd-restart.patch
+# bluetoothd-service.patch
 %patch9 -p1
 # statefs-battery-charge.patch
 %patch10 -p1
@@ -283,16 +283,16 @@ done
 
 %preun
 if [ "$1" -eq 0 ]; then
-systemctl stop bluetooth.service
+systemctl stop bluetooth.service ||:
 fi
 
 %post
 %{_bindir}/groupadd-user bluetooth
-systemctl daemon-reload
-systemctl reload-or-try-restart bluetooth.service
+systemctl daemon-reload ||:
+systemctl reload-or-try-restart bluetooth.service ||:
 
 %postun
-systemctl daemon-reload
+systemctl daemon-reload ||:
 
 %post libs -p /sbin/ldconfig
 

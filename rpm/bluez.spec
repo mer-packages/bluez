@@ -16,7 +16,6 @@ Group:      Applications/System
 License:    GPLv2+
 URL:        http://www.bluez.org/
 Source0:    http://www.kernel.org/pub/linux/bluetooth/%{name}-%{version}.tar.gz
-Source100:  bluez.yaml
 Patch0:     bluez-fsync.patch
 Patch1:     remove-duplicate-wrong-udev-rule-for-dell-mice.patch
 Patch2:     enable_HFP.patch

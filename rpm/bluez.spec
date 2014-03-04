@@ -47,6 +47,7 @@ Patch27:    bluetoothd-connect-BT-keyboard-crash-fix.patch
 Patch28:    AVCTP-handle-simultaneous-connections.patch
 Patch29:    AVDTP-start-after-timeout.patch
 Patch30:    AVCTP-invalid-pid-response.patch
+Patch31:    HCI-fix-long-local-name-handling.patch
 Requires:   bluez-libs = %{version}
 Requires:   dbus >= 0.60
 Requires:   hwdata >= 0.215
@@ -226,6 +227,8 @@ This package provides default configs for bluez
 %patch29 -p1
 # AVCTP-invalid-pid-response.patch
 %patch30 -p1
+# HCI-fix-long-local-name-handling.patch
+%patch31 -p1
 # >> setup
 # << setup
 

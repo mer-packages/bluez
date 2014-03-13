@@ -1,0 +1,38 @@
+From 3550985fa6c1b94d81fc1dd2be4dd24189696dee Mon Sep 17 00:00:00 2001
+From: Luiz Augusto von Dentz <luiz.von.dentz@intel.com>
+Date: Thu, 27 Jun 2013 16:36:09 +0300
+Subject: [PATCH BlueZ] network: Fix introspection of Connect method
+
+This fixes introspection of Connect method and reply properly if
+arguments are invalid.
+---
+ network/connection.c | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/network/connection.c b/network/connection.c
+index 544ec3a..9f3754e 100644
+--- a/network/connection.c
++++ b/network/connection.c
+@@ -400,7 +400,7 @@ static DBusMessage *connection_connect(DBusConnection *conn,
+ 
+ 	if (dbus_message_get_args(msg, NULL, DBUS_TYPE_STRING, &svc,
+ 						DBUS_TYPE_INVALID) == FALSE)
+-		return NULL;
++		return btd_error_invalid_args(msg);
+ 
+ 	id = bnep_service_id(svc);
+ 	nc = find_connection(peer->connections, id);
+@@ -554,7 +554,9 @@ static void path_unregister(void *data)
+ 
+ static const GDBusMethodTable connection_methods[] = {
+ 	{ GDBUS_ASYNC_METHOD("Connect",
+-			NULL, NULL, connection_connect) },
++			GDBUS_ARGS({"service", "s"}),
++			GDBUS_ARGS({"interface", "s"}),
++			connection_connect) },
+ 	{ GDBUS_METHOD("Disconnect",
+ 			NULL, NULL, connection_disconnect) },
+ 	{ GDBUS_METHOD("GetProperties",
+-- 
+1.8.1.4
+

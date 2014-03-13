@@ -49,6 +49,7 @@ Patch29:    AVDTP-start-after-timeout.patch
 Patch30:    AVCTP-invalid-pid-response.patch
 Patch31:    HCI-fix-long-local-name-handling.patch
 Patch32:    HID-auto-reconnect.patch
+Patch33:    network-Fix-introspection-of-Connect-method.patch
 Requires:   bluez-libs = %{version}
 Requires:   dbus >= 0.60
 Requires:   hwdata >= 0.215
@@ -232,6 +233,8 @@ This package provides default configs for bluez
 %patch31 -p1
 # HID-auto-reconnect.patch
 %patch32 -p1
+# network-Fix-introspection-of-Connect-method.patch
+%patch33 -p1
 # >> setup
 # << setup
 

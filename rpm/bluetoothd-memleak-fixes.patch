@@ -1,0 +1,72 @@
+diff -Naur bluez.orig/audio/media.c bluez/audio/media.c
+--- bluez.orig/audio/media.c	2014-04-01 14:02:20.268032638 +0300
++++ bluez/audio/media.c	2014-04-01 14:11:22.568009286 +0300
+@@ -783,7 +783,7 @@
+ 	}
+ 
+ 	if (!succeeded) {
+-		g_free(endpoint);
++		media_endpoint_destroy(endpoint);
+ 		return NULL;
+ 	}
+ 
+diff -Naur bluez.orig/audio/telephony-ofono.c bluez/audio/telephony-ofono.c
+--- bluez.orig/audio/telephony-ofono.c	2014-04-01 14:02:20.268032638 +0300
++++ bluez/audio/telephony-ofono.c	2014-04-01 14:08:19.676017161 +0300
+@@ -1312,6 +1312,7 @@
+ 
+ 	DBG("%s", path);
+ 
++	g_free(modem_obj_path);
+ 	modem_obj_path = g_strdup(path);
+ 
+ 	ret = send_method_call(OFONO_BUS_NAME, path,
+diff -Naur bluez.orig/gdbus/watch.c bluez/gdbus/watch.c
+--- bluez.orig/gdbus/watch.c	2014-04-01 14:02:20.268032638 +0300
++++ bluez/gdbus/watch.c	2014-04-01 14:10:21.724011906 +0300
+@@ -243,6 +243,13 @@
+ 	data->argument = g_strdup(argument);
+ 
+ 	if (!add_match(data, filter)) {
++		dbus_connection_unref(data->connection);
++		g_free(data->name);
++		g_free(data->owner);
++		g_free(data->path);
++		g_free(data->interface);
++		g_free(data->member);
++		g_free(data->argument);
+ 		g_free(data);
+ 		return NULL;
+ 	}
+diff -Naur bluez.orig/src/rfkill.c bluez/src/rfkill.c
+--- bluez.orig/src/rfkill.c	2014-04-01 14:02:20.264032638 +0300
++++ bluez/src/rfkill.c	2014-04-01 15:57:09.411735988 +0300
+@@ -144,6 +144,7 @@
+ }
+ 
+ static GIOChannel *channel = NULL;
++static guint watch = 0;
+ 
+ void rfkill_init(void)
+ {
+@@ -161,12 +162,18 @@
+ 	channel = g_io_channel_unix_new(fd);
+ 	g_io_channel_set_close_on_unref(channel, TRUE);
+ 
+-	g_io_add_watch(channel, G_IO_IN | G_IO_NVAL | G_IO_HUP | G_IO_ERR,
+-							rfkill_event, NULL);
++	watch = g_io_add_watch(channel,
++				G_IO_IN | G_IO_NVAL | G_IO_HUP | G_IO_ERR,
++				rfkill_event, NULL);
+ }
+ 
+ void rfkill_exit(void)
+ {
++	if (watch) {
++		g_source_remove(watch);
++		watch = 0;
++	}
++
+ 	if (!channel)
+ 		return;
+ 

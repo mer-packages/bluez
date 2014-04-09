@@ -6,7 +6,7 @@
 Name:       bluez
 
 # >> macros
-%define _system_groupadd() getent group %{1} >/dev/null || groupadd -r %{1}
+%define _system_groupadd() getent group %{1} >/dev/null || groupadd -g 1002 %{1}
 # << macros
 
 Summary:    Bluetooth utilities

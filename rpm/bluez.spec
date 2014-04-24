@@ -143,7 +143,7 @@ Group:      Development/Tools
 Requires:   %{name} = %{version}-%{release}
 Requires:   bluez-libs = %{version}
 Requires:   dbus-python
-Requires:   pygobject2
+Requires:   pygobject2 >= 3.10.2
 
 %description test
 Scripts for testing BlueZ and its functionality

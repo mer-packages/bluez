@@ -52,6 +52,7 @@ Patch32:    HID-auto-reconnect.patch
 Patch33:    network-Fix-introspection-of-Connect-method.patch
 Patch34:    bluetoothd-memleak-fixes.patch
 Patch35:    bluetoothd-cancel-pending-local-name-timeout.patch
+Patch36:    bluez5-hciattach.patch
 Requires:   bluez-libs = %{version}
 Requires:   dbus >= 0.60
 Requires:   hwdata >= 0.215
@@ -241,6 +242,8 @@ This package provides default configs for bluez
 %patch34 -p1
 # bluetoothd-cancel-pending-local-name-timeout.patch
 %patch35 -p1
+# bluez5-hciattach.patch
+%patch36 -p1
 # >> setup
 # << setup
 

@@ -51,6 +51,7 @@ Patch31:    HCI-fix-long-local-name-handling.patch
 Patch32:    HID-auto-reconnect.patch
 Patch33:    network-Fix-introspection-of-Connect-method.patch
 Patch34:    bluetoothd-memleak-fixes.patch
+Patch35:    bluetoothd-cancel-pending-local-name-timeout.patch
 Requires:   bluez-libs = %{version}
 Requires:   dbus >= 0.60
 Requires:   hwdata >= 0.215
@@ -238,6 +239,8 @@ This package provides default configs for bluez
 %patch33 -p1
 # bluetoothd-memleak-fixes.patch
 %patch34 -p1
+# bluetoothd-cancel-pending-local-name-timeout.patch
+%patch35 -p1
 # >> setup
 # << setup
 

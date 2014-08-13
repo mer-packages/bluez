@@ -1,0 +1,899 @@
+diff -Naur bluez.orig/Makefile.tools bluez/Makefile.tools
+--- bluez.orig/Makefile.tools	2014-08-13 10:03:51.034216862 +0300
++++ bluez/Makefile.tools	2014-08-13 10:04:09.654216175 +0300
+@@ -28,7 +28,8 @@
+ 						tools/hciattach_tialt.c \
+ 						tools/hciattach_ath3k.c \
+ 						tools/hciattach_qualcomm.c \
+-						tools/hciattach_intel.c
++						tools/hciattach_intel.c \
++						tools/hciattach_bcm43xx.c
+ tools_hciattach_LDADD = lib/libbluetooth-private.la
+ 
+ tools_hciconfig_SOURCES = tools/hciconfig.c tools/csr.h tools/csr.c \
+diff -Naur bluez.orig/tools/hciattach_bcm43xx.c bluez/tools/hciattach_bcm43xx.c
+--- bluez.orig/tools/hciattach_bcm43xx.c	1970-01-01 02:00:00.000000000 +0200
++++ bluez/tools/hciattach_bcm43xx.c	2014-08-13 10:04:09.658216175 +0300
+@@ -0,0 +1,384 @@
++/*
++ *
++ *  BlueZ - Bluetooth protocol stack for Linux
++ *
++ *  Copyright (C) 2014 Intel Corporation. All rights reserved.
++ *
++ *
++ *  This program is free software; you can redistribute it and/or modify
++ *  it under the terms of the GNU General Public License as published by
++ *  the Free Software Foundation; either version 2 of the License, or
++ *  (at your option) any later version.
++ *
++ *  This program is distributed in the hope that it will be useful,
++ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
++ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ *  GNU General Public License for more details.
++ *
++ *  You should have received a copy of the GNU General Public License
++ *  along with this program; if not, write to the Free Software
++ *  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
++ *
++ */
++
++#ifdef HAVE_CONFIG_H
++#include <config.h>
++#endif
++
++#include <stdio.h>
++#include <stdlib.h>
++#include <unistd.h>
++#include <termios.h>
++#include <fcntl.h>
++#include <unistd.h>
++#include <errno.h>
++#include <dirent.h>
++#include <time.h>
++
++#include <bluetooth/bluetooth.h>
++#include <bluetooth/hci.h>
++#include <bluetooth/hci_lib.h>
++
++#include "hciattach.h"
++
++#ifndef FIRMWARE_DIR
++#define FIRMWARE_DIR "/etc/firmware"
++#endif
++
++#define FW_EXT ".hcd"
++
++#define BCM43XX_CLOCK_48 1
++#define BCM43XX_CLOCK_24 2
++
++#define CMD_SUCCESS 0x00
++
++#define CC_MIN_SIZE 7
++
++#define MIN(X,Y) ((X) < (Y) ? (X) : (Y))
++
++static int bcm43xx_read_local_name(int fd, char *name, size_t size)
++{
++	unsigned char cmd[] = { HCI_COMMAND_PKT, 0x14, 0x0C, 0x00 };
++	unsigned char *resp;
++	unsigned int name_len;
++
++	fprintf(stdout, "Getting local name\n");
++
++	resp = malloc(size + CC_MIN_SIZE);
++	if (!resp)
++		return -1;
++
++	tcflush(fd, TCIOFLUSH);
++
++	if (write(fd, cmd, sizeof(cmd)) != sizeof(cmd)) {
++		fprintf(stderr, "Failed to write read local name command\n");
++		goto fail;
++	}
++
++	if (read_hci_event(fd, resp, size) < CC_MIN_SIZE) {
++		fprintf(stderr, "Failed to read local name, invalid HCI event\n");
++		goto fail;
++	}
++
++	if (resp[4] != cmd[1] || resp[5] != cmd[2] || resp[6] != CMD_SUCCESS) {
++		fprintf(stderr, "Failed to read local name, command failure\n");
++		goto fail;
++	}
++
++	name_len = resp[2] - 1;
++
++	strncpy(name, (char *) &resp[7], MIN(name_len, size));
++	name[size - 1] = 0;
++
++	fprintf(stdout, "Local name is '%s'\n", name);
++
++	free(resp);
++	return 0;
++
++fail:
++	free(resp);
++	return -1;
++}
++
++static int bcm43xx_reset(int fd)
++{
++	unsigned char cmd[] = { HCI_COMMAND_PKT, 0x03, 0x0C, 0x00 };
++	unsigned char resp[CC_MIN_SIZE];
++
++	if (write(fd, cmd, sizeof(cmd)) != sizeof(cmd)) {
++		fprintf(stderr, "Failed to write reset command\n");
++		return -1;
++	}
++
++	if (read_hci_event(fd, resp, sizeof(resp)) < CC_MIN_SIZE) {
++		fprintf(stderr, "Failed to reset chip, invalid HCI event\n");
++		return -1;
++	}
++
++	if (resp[4] != cmd[1] || resp[5] != cmd[2] || resp[6] != CMD_SUCCESS) {
++		fprintf(stderr, "Failed to reset chip, command failure\n");
++		return -1;
++	}
++
++	return 0;
++}
++
++static int bcm43xx_set_bdaddr(int fd, const char *bdaddr)
++{
++	unsigned char cmd[] =
++		{ HCI_COMMAND_PKT, 0x01, 0xfc, 0x06, 0x00, 0x00,
++				0x00, 0x00, 0x00, 0x00 };
++	unsigned char resp[CC_MIN_SIZE];
++
++	printf("Set BDADDR UART: %s\n", bdaddr);
++
++	if (str2ba(bdaddr, (bdaddr_t *) (&cmd[4])) < 0) {
++		fprintf(stderr, "Incorrect bdaddr\n");
++		return -1;
++	}
++
++	tcflush(fd, TCIOFLUSH);
++
++	if (write(fd, cmd, sizeof(cmd)) != sizeof(cmd)) {
++		fprintf(stderr, "Failed to write set bdaddr command\n");
++		return -1;
++	}
++
++	if (read_hci_event(fd, resp, sizeof(resp)) < CC_MIN_SIZE) {
++		fprintf(stderr, "Failed to set bdaddr, invalid HCI event\n");
++		return -1;
++	}
++
++	if (resp[4] != cmd[1] || resp[5] != cmd[2] || resp[6] != CMD_SUCCESS) {
++		fprintf(stderr, "Failed to set bdaddr, command failure\n");
++		return -1;
++	}
++
++	return 0;
++}
++
++static int bcm43xx_set_speed(int fd, uint32_t speed)
++{
++	unsigned char cmd[] =
++		{ HCI_COMMAND_PKT, 0x18, 0xfc, 0x06, 0x00, 0x00,
++				0x00, 0x00, 0x00, 0x00 };
++	unsigned char resp[CC_MIN_SIZE];
++
++	printf("Set Controller UART speed to %d bit/s\n", speed);
++
++	cmd[6] = (uint8_t) (speed);
++	cmd[7] = (uint8_t) (speed >> 8);
++	cmd[8] = (uint8_t) (speed >> 16);
++	cmd[9] = (uint8_t) (speed >> 24);
++
++	tcflush(fd, TCIOFLUSH);
++
++	if (write(fd, cmd, sizeof(cmd)) != sizeof(cmd)) {
++		fprintf(stderr, "Failed to write update baudrate command\n");
++		return -1;
++	}
++
++	if (read_hci_event(fd, resp, sizeof(resp)) < CC_MIN_SIZE) {
++		fprintf(stderr, "Failed to update baudrate, invalid HCI event\n");
++		return -1;
++	}
++
++	if (resp[4] != cmd[1] || resp[5] != cmd[2] || resp[6] != CMD_SUCCESS) {
++		fprintf(stderr, "Failed to update baudrate, command failure\n");
++		return -1;
++	}
++
++	return 0;
++}
++
++static int bcm43xx_set_clock(int fd, unsigned char clock)
++{
++	unsigned char cmd[] = { HCI_COMMAND_PKT, 0x45, 0xfc, 0x01, 0x00 };
++	unsigned char resp[CC_MIN_SIZE];
++
++	printf("Set Controller clock (%d)\n", clock);
++
++	cmd[4] = clock;
++
++	tcflush(fd, TCIOFLUSH);
++
++	if (write(fd, cmd, sizeof(cmd)) != sizeof(cmd)) {
++		fprintf(stderr, "Failed to write update clock command\n");
++		return -1;
++	}
++
++	if (read_hci_event(fd, resp, sizeof(resp)) < CC_MIN_SIZE) {
++		fprintf(stderr, "Failed to update clock, invalid HCI event\n");
++		return -1;
++	}
++
++	if (resp[4] != cmd[1] || resp[5] != cmd[2] || resp[6] != CMD_SUCCESS) {
++		fprintf(stderr, "Failed to update clock, command failure\n");
++		return -1;
++	}
++
++	return 0;
++}
++
++static int bcm43xx_load_firmware(int fd, const char *fw)
++{
++	unsigned char cmd[] = { HCI_COMMAND_PKT, 0x2e, 0xfc, 0x00 };
++	struct timespec tm_mode = { 0, 50000 };
++	struct timespec tm_ready = { 0, 2000000 };
++	unsigned char resp[CC_MIN_SIZE];
++	unsigned char tx_buf[1024];
++	int len, fd_fw, n;
++
++	printf("Flash firmware %s\n", fw);
++
++	fd_fw = open(fw, O_RDONLY);
++	if (fd_fw < 0) {
++		fprintf(stderr, "Unable to open firmware (%s)\n", fw);
++		return -1;
++	}
++
++	tcflush(fd, TCIOFLUSH);
++
++	if (write(fd, cmd, sizeof(cmd)) != sizeof(cmd)) {
++		fprintf(stderr, "Failed to write download mode command\n");
++		goto fail;
++	}
++
++	if (read_hci_event(fd, resp, sizeof(resp)) < CC_MIN_SIZE) {
++		fprintf(stderr, "Failed to load firmware, invalid HCI event\n");
++		goto fail;
++	}
++
++	if (resp[4] != cmd[1] || resp[5] != cmd[2] || resp[6] != CMD_SUCCESS) {
++		fprintf(stderr, "Failed to load firmware, command failure\n");
++		goto fail;
++	}
++
++	/* Wait 50ms to let the firmware placed in download mode */
++	nanosleep(&tm_mode, NULL);
++
++	tcflush(fd, TCIOFLUSH);
++
++	while ((n = read(fd_fw, &tx_buf[1], 3))) {
++		if (n < 0) {
++			fprintf(stderr, "Failed to read firmware\n");
++			goto fail;
++		}
++
++		tx_buf[0] = HCI_COMMAND_PKT;
++
++		len = tx_buf[3];
++
++		if (read(fd_fw, &tx_buf[4], len) < 0) {
++			fprintf(stderr, "Failed to read firmware\n");
++			goto fail;
++		}
++
++		if (write(fd, tx_buf, len + 4) != (len + 4)) {
++			fprintf(stderr, "Failed to write firmware\n");
++			goto fail;
++		}
++
++		read_hci_event(fd, resp, sizeof(resp));
++		tcflush(fd, TCIOFLUSH);
++	}
++
++	/* Wait for firmware ready */
++	nanosleep(&tm_ready, NULL);
++
++	close(fd_fw);
++	return 0;
++
++fail:
++	close(fd_fw);
++	return -1;
++}
++
++static int bcm43xx_locate_patch(const char *dir_name,
++		const char *chip_name, char *location)
++{
++	DIR *dir;
++	int ret = -1;
++
++	dir = opendir(dir_name);
++	if (!dir) {
++		fprintf(stderr, "Cannot open directory '%s': %s\n",
++				dir_name, strerror(errno));
++		return -1;
++	}
++
++	/* Recursively look for a BCM43XX*.hcd */
++	while (1) {
++		struct dirent *entry = readdir(dir);
++		if (!entry)
++			break;
++
++		if (entry->d_type & DT_DIR) {
++			char path[PATH_MAX];
++
++			if (!strcmp(entry->d_name, "..") || !strcmp(entry->d_name, "."))
++				continue;
++
++			snprintf(path, PATH_MAX, "%s/%s", dir_name, entry->d_name);
++
++			ret = bcm43xx_locate_patch(path, chip_name, location);
++			if (!ret)
++				break;
++		} else if (!strncasecmp(chip_name, entry->d_name, strlen(chip_name))) {
++			unsigned int name_len = strlen(entry->d_name);
++			size_t curs_ext = name_len - sizeof(FW_EXT) + 1;
++
++			if (curs_ext > name_len)
++				break;
++
++			if (strncasecmp(FW_EXT, &entry->d_name[curs_ext], sizeof(FW_EXT)))
++				break;
++
++			/* found */
++			snprintf(location, PATH_MAX, "%s/%s", dir_name, entry->d_name);
++			ret = 0;
++			break;
++		}
++	}
++
++	closedir(dir);
++
++	return ret;
++}
++
++int bcm43xx_init(int fd, int speed, struct termios *ti, const char *bdaddr,
++			const char *fw_dir)
++{
++	char chip_name[20];
++	char fw_path[PATH_MAX];
++
++	printf("bcm43xx_init\n");
++
++	if (bcm43xx_reset(fd))
++		return -1;
++
++	if (bcm43xx_read_local_name(fd, chip_name, sizeof(chip_name)))
++		return -1;
++
++	if (bcm43xx_locate_patch(fw_dir ? fw_dir : FIRMWARE_DIR, chip_name,
++					fw_path)) {
++		fprintf(stderr, "Patch not found, continue anyway\n");
++	} else {
++		if (bcm43xx_load_firmware(fd, fw_path))
++			return -1;
++
++		if (bcm43xx_reset(fd))
++			return -1;
++	}
++
++	if (bdaddr)
++		bcm43xx_set_bdaddr(fd, bdaddr);
++
++	if (speed > 3000000 && bcm43xx_set_clock(fd, BCM43XX_CLOCK_48))
++		return -1;
++
++	if (bcm43xx_set_speed(fd, speed))
++		return -1;
++
++	return 0;
++}
+diff -Naur bluez.orig/tools/hciattach.c bluez/tools/hciattach.c
+--- bluez.orig/tools/hciattach.c	2014-08-13 10:03:51.054216861 +0300
++++ bluez/tools/hciattach.c	2014-08-13 10:12:50.466196968 +0300
+@@ -27,7 +27,6 @@
+ #include <config.h>
+ #endif
+ 
+-#define _GNU_SOURCE
+ #include <stdio.h>
+ #include <errno.h>
+ #include <fcntl.h>
+@@ -49,10 +48,6 @@
+ 
+ #include "hciattach.h"
+ 
+-#ifdef NEED_PPOLL
+-#include "ppoll.h"
+-#endif
+-
+ struct uart_t {
+ 	char *type;
+ 	int  m_id;
+@@ -63,11 +58,13 @@
+ 	int  flags;
+ 	int  pm;
+ 	char *bdaddr;
++	char *fw_dir;
+ 	int  (*init) (int fd, struct uart_t *u, struct termios *ti);
+ 	int  (*post) (int fd, struct uart_t *u, struct termios *ti);
+ };
+ 
+ #define FLOW_CTL	0x0001
++#define AMP_DEV		0x0002
+ #define ENABLE_PM	1
+ #define DISABLE_PM	0
+ 
+@@ -88,7 +85,7 @@
+ 	exit(1);
+ }
+ 
+-static int uart_speed(int s)
++int uart_speed(int s)
+ {
+ 	switch (s) {
+ 	case 9600:
+@@ -331,6 +328,11 @@
+ 	return intel_init(fd, u->init_speed, &u->speed, ti);
+ }
+ 
++static int bcm43xx(int fd, struct uart_t *u, struct termios *ti)
++{
++	return bcm43xx_init(fd, u->speed, ti, u->bdaddr, u->fw_dir);
++}
++
+ static int read_check(int fd, void *buf, int count)
+ {
+ 	int res;
+@@ -1045,119 +1047,127 @@
+ 
+ struct uart_t uart[] = {
+ 	{ "any",        0x0000, 0x0000, HCI_UART_H4,   115200, 115200,
+-				FLOW_CTL, DISABLE_PM, NULL, NULL     },
++				FLOW_CTL, DISABLE_PM, NULL, NULL, NULL     },
+ 
+ 	{ "ericsson",   0x0000, 0x0000, HCI_UART_H4,   57600,  115200,
+-				FLOW_CTL, DISABLE_PM, NULL, ericsson },
++				FLOW_CTL, DISABLE_PM, NULL, NULL, ericsson },
+ 
+ 	{ "digi",       0x0000, 0x0000, HCI_UART_H4,   9600,   115200,
+-				FLOW_CTL, DISABLE_PM, NULL, digi     },
++				FLOW_CTL, DISABLE_PM, NULL, NULL, digi     },
+ 
+ 	{ "bcsp",       0x0000, 0x0000, HCI_UART_BCSP, 115200, 115200,
+-				0, DISABLE_PM, NULL, bcsp     },
++				0, DISABLE_PM, NULL, NULL, bcsp     },
+ 
+ 	/* Xircom PCMCIA cards: Credit Card Adapter and Real Port Adapter */
+ 	{ "xircom",     0x0105, 0x080a, HCI_UART_H4,   115200, 115200,
+-				FLOW_CTL, DISABLE_PM,  NULL, NULL     },
++				FLOW_CTL, DISABLE_PM, NULL,  NULL, NULL     },
+ 
+ 	/* CSR Casira serial adapter or BrainBoxes serial dongle (BL642) */
+ 	{ "csr",        0x0000, 0x0000, HCI_UART_H4,   115200, 115200,
+-				FLOW_CTL, DISABLE_PM, NULL, csr      },
++				FLOW_CTL, DISABLE_PM, NULL, NULL, csr      },
+ 
+ 	/* BrainBoxes PCMCIA card (BL620) */
+ 	{ "bboxes",     0x0160, 0x0002, HCI_UART_H4,   115200, 460800,
+-				FLOW_CTL, DISABLE_PM, NULL, csr      },
++				FLOW_CTL, DISABLE_PM, NULL, NULL, csr      },
+ 
+ 	/* Silicon Wave kits */
+ 	{ "swave",      0x0000, 0x0000, HCI_UART_H4,   115200, 115200,
+-				FLOW_CTL, DISABLE_PM, NULL, swave    },
++				FLOW_CTL, DISABLE_PM, NULL, NULL, swave    },
+ 
+ 	/* Texas Instruments Bluelink (BRF) modules */
+ 	{ "texas",      0x0000, 0x0000, HCI_UART_LL,   115200, 115200,
+-				FLOW_CTL, DISABLE_PM, NULL, texas,    texas2 },
++				FLOW_CTL, DISABLE_PM, NULL, NULL, texas,
++				texas2 },
+ 
+ 	{ "texasalt",   0x0000, 0x0000, HCI_UART_LL,   115200, 115200,
+-				FLOW_CTL, DISABLE_PM, NULL, texasalt, NULL   },
+-
+-	/* ST-Ericsson CG2900 GPS FM Bluetooth combo controller */
+-	{ "cg2900",     0x0000, 0x0000, HCI_UART_STE,  115200, 115200,
+-				FLOW_CTL, DISABLE_PM, NULL, NULL     },
+-
++				FLOW_CTL, DISABLE_PM, NULL, NULL, texasalt,
++				NULL   },
+ 
+ 	/* ST Microelectronics minikits based on STLC2410/STLC2415 */
+ 	{ "st",         0x0000, 0x0000, HCI_UART_H4,    57600, 115200,
+-				FLOW_CTL, DISABLE_PM,  NULL, st       },
++				FLOW_CTL, DISABLE_PM, NULL,  NULL, st       },
+ 
+ 	/* ST Microelectronics minikits based on STLC2500 */
+ 	{ "stlc2500",   0x0000, 0x0000, HCI_UART_H4, 115200, 115200,
+-			FLOW_CTL, DISABLE_PM, "00:80:E1:00:AB:BA", stlc2500 },
++			FLOW_CTL, DISABLE_PM, "00:80:E1:00:AB:BA", NULL,
++			stlc2500 },
+ 
+ 	/* Philips generic Ericsson IP core based */
+ 	{ "philips",    0x0000, 0x0000, HCI_UART_H4,   115200, 115200,
+-				FLOW_CTL, DISABLE_PM, NULL, NULL     },
++				FLOW_CTL, DISABLE_PM, NULL, NULL, NULL     },
+ 
+ 	/* Philips BGB2xx Module */
+ 	{ "bgb2xx",    0x0000, 0x0000, HCI_UART_H4,   115200, 115200,
+-			FLOW_CTL, DISABLE_PM, "BD:B2:10:00:AB:BA", bgb2xx },
++			FLOW_CTL, DISABLE_PM, "BD:B2:10:00:AB:BA", NULL,
++			bgb2xx },
+ 
+ 	/* Sphinx Electronics PICO Card */
+ 	{ "picocard",   0x025e, 0x1000, HCI_UART_H4, 115200, 115200,
+-				FLOW_CTL, DISABLE_PM, NULL, NULL     },
++				FLOW_CTL, DISABLE_PM, NULL, NULL, NULL     },
+ 
+ 	/* Inventel BlueBird Module */
+ 	{ "inventel",   0x0000, 0x0000, HCI_UART_H4, 115200, 115200,
+-				FLOW_CTL, DISABLE_PM, NULL, NULL     },
++				FLOW_CTL, DISABLE_PM, NULL, NULL, NULL     },
+ 
+ 	/* COM One Platinium Bluetooth PC Card */
+ 	{ "comone",     0xffff, 0x0101, HCI_UART_BCSP, 115200, 115200,
+-				0, DISABLE_PM,  NULL, bcsp     },
++				0, DISABLE_PM, NULL,  NULL, bcsp     },
+ 
+ 	/* TDK Bluetooth PC Card and IBM Bluetooth PC Card II */
+ 	{ "tdk",        0x0105, 0x4254, HCI_UART_BCSP, 115200, 115200,
+-				0, DISABLE_PM, NULL, bcsp     },
++				0, DISABLE_PM, NULL, NULL, bcsp     },
+ 
+ 	/* Socket Bluetooth CF Card (Rev G) */
+ 	{ "socket",     0x0104, 0x0096, HCI_UART_BCSP, 230400, 230400,
+-				0, DISABLE_PM, NULL, bcsp     },
++				0, DISABLE_PM, NULL, NULL, bcsp     },
+ 
+ 	/* 3Com Bluetooth Card (Version 3.0) */
+ 	{ "3com",       0x0101, 0x0041, HCI_UART_H4,   115200, 115200,
+-				FLOW_CTL, DISABLE_PM, NULL, csr      },
++				FLOW_CTL, DISABLE_PM, NULL, NULL, csr      },
+ 
+ 	/* AmbiCom BT2000C Bluetooth PC/CF Card */
+ 	{ "bt2000c",    0x022d, 0x2000, HCI_UART_H4,    57600, 460800,
+-				FLOW_CTL, DISABLE_PM, NULL, csr      },
++				FLOW_CTL, DISABLE_PM, NULL, NULL, csr      },
+ 
+ 	/* Zoom Bluetooth PCMCIA Card */
+ 	{ "zoom",       0x0279, 0x950b, HCI_UART_BCSP, 115200, 115200,
+-				0, DISABLE_PM, NULL, bcsp     },
++				0, DISABLE_PM, NULL, NULL, bcsp     },
+ 
+ 	/* Sitecom CN-504 PCMCIA Card */
+ 	{ "sitecom",    0x0279, 0x950b, HCI_UART_BCSP, 115200, 115200,
+-				0, DISABLE_PM, NULL, bcsp     },
++				0, DISABLE_PM, NULL, NULL, bcsp     },
+ 
+ 	/* Billionton PCBTC1 PCMCIA Card */
+ 	{ "billionton", 0x0279, 0x950b, HCI_UART_BCSP, 115200, 115200,
+-				0, DISABLE_PM, NULL, bcsp     },
++				0, DISABLE_PM, NULL, NULL, bcsp     },
+ 
+ 	/* Broadcom BCM2035 */
+ 	{ "bcm2035",    0x0A5C, 0x2035, HCI_UART_H4,   115200, 460800,
+-				FLOW_CTL, DISABLE_PM, NULL, bcm2035  },
++				FLOW_CTL, DISABLE_PM, NULL, NULL, bcm2035  },
++
++	/* Broadcom BCM43XX */
++	{ "bcm43xx",    0x0000, 0x0000, HCI_UART_H4,   115200, 3000000,
++				FLOW_CTL, DISABLE_PM, NULL, NULL, bcm43xx,
++				NULL  },
+ 
+ 	{ "ath3k",    0x0000, 0x0000, HCI_UART_ATH3K, 115200, 115200,
+-			FLOW_CTL, DISABLE_PM, NULL, ath3k_ps, ath3k_pm  },
++			FLOW_CTL, DISABLE_PM, NULL, NULL, ath3k_ps, ath3k_pm  },
+ 
+ 	/* QUALCOMM BTS */
+ 	{ "qualcomm",   0x0000, 0x0000, HCI_UART_H4,   115200, 115200,
+-			FLOW_CTL, DISABLE_PM, NULL, qualcomm, NULL },
++			FLOW_CTL, DISABLE_PM, NULL, NULL, qualcomm, NULL },
+ 
+ 	/* Intel Bluetooth Module */
+ 	{ "intel",      0x0000, 0x0000, HCI_UART_H4,   115200, 115200,
+-			FLOW_CTL, DISABLE_PM, NULL, intel, NULL },
++			FLOW_CTL, DISABLE_PM, NULL, NULL, intel, NULL },
+ 
+ 	/* Three-wire UART */
+ 	{ "3wire",      0x0000, 0x0000, HCI_UART_3WIRE, 115200, 115200,
+-			0, DISABLE_PM, NULL, NULL, NULL },
++			0, DISABLE_PM, NULL, NULL, NULL, NULL },
++
++	/* AMP controller UART */
++	{ "amp",	0x0000, 0x0000, HCI_UART_H4, 115200, 115200,
++			AMP_DEV, DISABLE_PM, NULL, NULL, NULL, NULL },
+ 
+ 	{ NULL, 0 }
+ };
+@@ -1183,15 +1193,18 @@
+ }
+ 
+ /* Initialize UART driver */
+-static int init_uart(char *dev, struct uart_t *u, int send_break, int raw, int line_disc)
++static int init_uart(char *dev, struct uart_t *u, int send_break, int raw)
+ {
+ 	struct termios ti;
+-	int fd;
++	int fd, i;
+ 	unsigned long flags = 0;
+ 
+ 	if (raw)
+ 		flags |= 1 << HCI_UART_RAW_DEVICE;
+ 
++	if (u->flags & AMP_DEV)
++		flags |= 1 << HCI_UART_CREATE_AMP;
++
+ 	fd = open(dev, O_RDWR | O_NOCTTY);
+ 	if (fd < 0) {
+ 		perror("Can't open serial port");
+@@ -1243,7 +1256,8 @@
+ 	}
+ 
+ 	/* Set TTY to N_HCI line discipline */
+-	if (ioctl(fd, TIOCSETD, &line_disc) < 0) {
++	i = N_HCI;
++	if (ioctl(fd, TIOCSETD, &i) < 0) {
+ 		perror("Can't set line discipline");
+ 		return -1;
+ 	}
+@@ -1268,7 +1282,7 @@
+ {
+ 	printf("hciattach - HCI UART driver initialization utility\n");
+ 	printf("Usage:\n");
+-	printf("\thciattach [-n] [-p] [-a line_disc_nr] [-b] [-r] [-t timeout] [-s initial_speed] <tty> <type | id> [speed] [flow|noflow] [bdaddr]\n");
++	printf("\thciattach [-n] [-p] [-b] [-r] [-t timeout] [-s initial_speed] [-f firmwaredir] <tty> <type | id> [speed] [flow|noflow] [bdaddr]\n");
+ 	printf("\thciattach -l\n");
+ }
+ 
+@@ -1277,7 +1291,6 @@
+ 	struct uart_t *u = NULL;
+ 	int detach, printpid, raw, opt, i, n, ld, err;
+ 	int to = 10;
+-	int line_disc = N_HCI;
+ 	int init_speed = 0;
+ 	int send_break = 0;
+ 	pid_t pid;
+@@ -1285,16 +1298,15 @@
+ 	struct pollfd p;
+ 	sigset_t sigs;
+ 	char dev[PATH_MAX];
++	char *fw_dir = NULL;
++	char bdaddr_buf[18];
+ 
+ 	detach = 1;
+ 	printpid = 0;
+ 	raw = 0;
+ 
+-	while ((opt=getopt(argc, argv, "bnpt:s:lra:")) != EOF) {
++	while ((opt=getopt(argc, argv, "bnpt:s:lrf:")) != EOF) {
+ 		switch(opt) {
+-		case 'a':
+-                        line_disc = atoi(optarg);
+-                        break;
+ 		case 'b':
+ 			send_break = 1;
+ 			break;
+@@ -1326,6 +1338,10 @@
+ 			raw = 1;
+ 			break;
+ 
++		case 'f':
++			fw_dir = strdup(optarg);
++			break;
++
+ 		default:
+ 			usage();
+ 			exit(1);
+@@ -1396,6 +1412,20 @@
+ 		exit(1);
+ 	}
+ 
++	if (u->bdaddr && u->bdaddr[0] == '/') { /* read bdaddr from a file */
++		int bdaddr_fd = open(u->bdaddr, O_RDONLY);
++		u->bdaddr = NULL;
++		if (bdaddr_fd > 0) {
++			memset(bdaddr_buf, 0, sizeof(bdaddr_buf));
++			if (read(bdaddr_fd, bdaddr_buf, 17) == 17) {
++				u->bdaddr = bdaddr_buf;
++			}
++			close(bdaddr_fd);
++		}
++	}
++
++	u->fw_dir = fw_dir;
++
+ 	/* If user specified a initial speed, use that instead of
+ 	   the hardware's default */
+ 	if (init_speed)
+@@ -1410,7 +1440,7 @@
+ 	alarm(to);
+ 	bcsp_max_retries = to;
+ 
+-	n = init_uart(dev, u, send_break, raw, line_disc);
++	n = init_uart(dev, u, send_break, raw);
+ 	if (n < 0) {
+ 		perror("Can't initialize device");
+ 		exit(1);
+diff -Naur bluez.orig/tools/hciattach.h bluez/tools/hciattach.h
+--- bluez.orig/tools/hciattach.h	2014-08-13 10:03:51.042216862 +0300
++++ bluez/tools/hciattach.h	2014-08-13 10:04:09.658216175 +0300
+@@ -39,14 +39,14 @@
+ #define HCI_UART_H4DS	3
+ #define HCI_UART_LL	4
+ #define HCI_UART_ATH3K  5
+-#define HCI_UART_STE	6
+ 
+ #define HCI_UART_RAW_DEVICE	0
+ #define HCI_UART_RESET_ON_INIT	1
+ #define HCI_UART_CREATE_AMP	2
+ 
+-int read_hci_event(int fd, unsigned char* buf, int size);
++int read_hci_event(int fd, unsigned char *buf, int size);
+ int set_speed(int fd, struct termios *ti, int speed);
++int uart_speed(int speed);
+ 
+ int texas_init(int fd, int *speed, struct termios *ti);
+ int texas_post(int fd, struct termios *ti);
+@@ -58,3 +58,5 @@
+ int ath3k_post(int fd, int pm);
+ int qualcomm_init(int fd, int speed, struct termios *ti, const char *bdaddr);
+ int intel_init(int fd, int init_speed, int *speed, struct termios *ti);
++int bcm43xx_init(int fd, int speed, struct termios *ti, const char *bdaddr,
++			const char *fwdir);
+diff -Naur bluez.orig/tools/hciattach_intel.c bluez/tools/hciattach_intel.c
+--- bluez.orig/tools/hciattach_intel.c	2014-08-13 10:03:51.054216861 +0300
++++ bluez/tools/hciattach_intel.c	2014-08-13 10:04:09.658216175 +0300
+@@ -148,14 +148,13 @@
+  */
+ static int get_next_patch_entry(int fd, struct patch_entry *entry)
+ {
+-	int len, size;
++	int size;
+ 	char rb;
+ 
+ 	if (read(fd, &rb, 1) <= 0)
+ 		return 0;
+ 
+ 	entry->type = rb;
+-	len = 0;
+ 
+ 	switch (entry->type) {
+ 	case PATCH_TYPE_CMD:
+@@ -176,7 +175,7 @@
+ 	case PATCH_TYPE_EVT:
+ 		entry->data[0] = HCI_EVENT_PKT;
+ 
+-		if (read(fd, &entry->data[len], 2) < 0)
++		if (read(fd, &entry->data[1], 2) < 0)
+ 			return -1;
+ 
+ 		size = (int)entry->data[2];
+@@ -193,7 +192,7 @@
+ 		return -1;
+ 	}
+ 
+-	return len;
++	return entry->len;
+ }
+ 
+ /**
+diff -Naur bluez.orig/tools/hciattach_qualcomm.c bluez/tools/hciattach_qualcomm.c
+--- bluez.orig/tools/hciattach_qualcomm.c	2014-08-13 10:03:51.046216862 +0300
++++ bluez/tools/hciattach_qualcomm.c	2014-08-13 10:04:09.658216175 +0300
+@@ -40,6 +40,7 @@
+ #include <sys/poll.h>
+ #include <sys/param.h>
+ #include <sys/ioctl.h>
++#include <sys/uio.h>
+ 
+ #include <bluetooth/bluetooth.h>
+ #include <bluetooth/hci.h>
+diff -Naur bluez.orig/tools/hciattach_tialt.c bluez/tools/hciattach_tialt.c
+--- bluez.orig/tools/hciattach_tialt.c	2014-08-13 10:03:51.046216862 +0300
++++ bluez/tools/hciattach_tialt.c	2014-08-13 10:04:09.662216175 +0300
+@@ -39,6 +39,7 @@
+ #include <sys/poll.h>
+ #include <sys/param.h>
+ #include <sys/ioctl.h>
++#include <sys/uio.h>
+ 
+ #include <bluetooth/bluetooth.h>
+ #include <bluetooth/hci.h>
+diff -Naur bluez.orig/tools/hciattach_ti.c bluez/tools/hciattach_ti.c
+--- bluez.orig/tools/hciattach_ti.c	2014-08-13 10:03:51.046216862 +0300
++++ bluez/tools/hciattach_ti.c	2014-08-13 10:04:09.662216175 +0300
+@@ -55,7 +55,7 @@
+ 
+ #define TI_MANUFACTURER_ID	13
+ 
+-#define FIRMWARE_DIRECTORY	"/lib/firmware/"
++#define FIRMWARE_DIRECTORY	"/lib/firmware/ti-connectivity/"
+ 
+ #define ACTION_SEND_COMMAND	1
+ #define ACTION_WAIT_EVENT	2
+@@ -109,10 +109,10 @@
+ 	uint32_t flow_control;
+ }__attribute__ ((packed));
+ 
+-static FILE *bts_load_script(const char* file_name, uint32_t* version)
++static FILE *bts_load_script(const char *file_name, uint32_t *version)
+ {
+ 	struct bts_header header;
+-	FILE* fp;
++	FILE *fp;
+ 
+ 	fp = fopen(file_name, "rb");
+ 	if (!fp) {
+@@ -141,8 +141,8 @@
+ 	return NULL;
+ }
+ 
+-static unsigned long bts_fetch_action(FILE* fp, unsigned char* action_buf,
+-				unsigned long buf_size, uint16_t* action_type)
++static unsigned long bts_fetch_action(FILE *fp, unsigned char *action_buf,
++				unsigned long buf_size, uint16_t *action_type)
+ {
+ 	struct bts_action action_hdr;
+ 	unsigned long nread;
+@@ -169,7 +169,7 @@
+ 	return nread * sizeof(uint8_t);
+ }
+ 
+-static void bts_unload_script(FILE* fp)
++static void bts_unload_script(FILE *fp)
+ {
+ 	if (fp)
+ 		fclose(fp);
+@@ -237,7 +237,7 @@
+ 	return 0;
+ }
+ 
+-static int brf_send_command_socket(int fd, struct bts_action_send* send_action)
++static int brf_send_command_socket(int fd, struct bts_action_send *send_action)
+ {
+ 	char response[1024] = {0};
+ 	hci_command_hdr *cmd = (hci_command_hdr *) send_action->data;
+@@ -267,7 +267,8 @@
+ 	return 0;
+ }
+ 
+-static int brf_send_command_file(int fd, struct bts_action_send* send_action, long size)
++static int brf_send_command_file(int fd, struct bts_action_send *send_action,
++								long size)
+ {
+ 	unsigned char response[1024] = {0};
+ 	long ret = 0;
+@@ -296,7 +297,8 @@
+ }
+ 
+ 
+-static int brf_send_command(int fd, struct bts_action_send* send_action, long size, int hcill_installed)
++static int brf_send_command(int fd, struct bts_action_send *send_action,
++						long size, int hcill_installed)
+ {
+ 	int ret = 0;
+ 	char *fixed_action;
+@@ -320,7 +322,9 @@
+ 	switch (brf_type) {
+ 	case ACTION_SEND_COMMAND:
+ 		DPRINTF("W");
+-		ret = brf_send_command(fd, (struct bts_action_send*) brf_action, brf_size, hcill_installed);
++		ret = brf_send_command(fd,
++					(struct bts_action_send *) brf_action,
++					brf_size, hcill_installed);
+ 		break;
+ 	case ACTION_WAIT_EVENT:
+ 		DPRINTF("R");

@@ -783,7 +783,7 @@ static struct media_endpoint *media_endpoint_create(struct media_adapter *adapte
 	}
 
 	if (!succeeded) {
-		g_free(endpoint);
+		media_endpoint_destroy(endpoint);
 		return NULL;
 	}
 

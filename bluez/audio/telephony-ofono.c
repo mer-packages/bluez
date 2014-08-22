@@ -1312,6 +1312,7 @@ static void network_found(const char *path)
 
 	DBG("%s", path);
 
+	g_free(modem_obj_path);
 	modem_obj_path = g_strdup(path);
 
 	ret = send_method_call(OFONO_BUS_NAME, path,

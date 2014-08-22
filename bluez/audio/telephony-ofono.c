@@ -53,6 +53,8 @@ struct voice_call {
 	gboolean conference;
 	char *number;
 	guint watch;
+
+	gboolean hold_status_pending;
 };
 
 static DBusConnection *connection = NULL;
@@ -107,6 +109,34 @@ static struct indicator ofono_indicators[] =
 	{ "roam",	"0,1",	0,	TRUE },
 	{ NULL }
 };
+
+static void hold_status_clear(struct voice_call *vc)
+{
+	vc->hold_status_pending = FALSE;
+}
+
+static void hold_status_set_all(void)
+{
+	GSList *l;
+
+	for (l = calls; l != NULL; l = l->next) {
+		struct voice_call *vc = l->data;
+		vc->hold_status_pending = TRUE;
+	}
+}
+
+static gboolean hold_status_pending(void)
+{
+	GSList *l;
+
+	for (l = calls; l != NULL; l = l->next) {
+		struct voice_call *vc = l->data;
+		if (vc->hold_status_pending == TRUE)
+			return TRUE;
+	}
+
+	return FALSE;
+}
 
 static struct voice_call *find_vc(const char *path)
 {
@@ -692,6 +722,9 @@ void telephony_call_hold_req(void *telephony_device, const char *cmd)
 	}
 
 done:
+	if (cme_err == CME_ERROR_NONE) /* wait for all hold statuses now */
+		hold_status_set_all();
+
 	telephony_call_hold_rsp(telephony_device, cme_err);
 }
 
@@ -791,6 +824,11 @@ static void update_held_status(void)
 {
 	DBG("");
 
+	if (hold_status_pending()) {
+		DBG("Hold statuses pending. ");
+		return;
+	}
+
 	if (find_vc_with_status(CALL_STATUS_HELD)) {
 		if (find_vc_without_status(CALL_STATUS_HELD))
 			telephony_update_indicator(ofono_indicators,
@@ -832,6 +870,7 @@ static gboolean handle_vc_property_changed(DBusConnection *conn,
 	if (g_str_equal(property, "State")) {
 		dbus_message_iter_get_basic(&sub, &state);
 		DBG("State %s", state);
+		hold_status_clear(vc);
 		if (g_str_equal(state, "disconnected")) {
 			calls = g_slist_remove(calls, vc);
 			call_free(vc);

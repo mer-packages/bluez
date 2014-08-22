@@ -174,7 +174,23 @@ static struct dev_info {
 
 	uint16_t discoverable_timeout;
 	guint discoverable_id;
+
+	guint local_name_timeout;
 } *devs = NULL;
+
+static void update_name(int index, const char *name);
+
+static void cancel_local_name_timeout(int index)
+{
+	struct dev_info *dev = &devs[index];
+
+	DBG("hci%d", index);
+
+	if (dev->local_name_timeout) {
+		g_source_remove(dev->local_name_timeout);
+		dev->local_name_timeout = 0;
+	}
+}
 
 static int found_dev_rssi_cmp(gconstpointer a, gconstpointer b)
 {
@@ -692,7 +708,7 @@ static int hciops_set_name(int index, const char *name)
 	struct dev_info *dev = &devs[index];
 	change_local_name_cp cp;
 
-	DBG("hci%d, name %s", index, name);
+	DBG("hci%d name '%s'", index, name);
 
 	memset(&cp, 0, sizeof(cp));
 	strncpy((char *) cp.name, name, sizeof(cp.name));
@@ -783,6 +799,9 @@ static gboolean init_adapter(int index)
 		mode = on_mode;
 
 	if (mode == MODE_OFF) {
+		/* We might have a set local name op pending completion;
+		   force storing a name to the adapter before turning off */
+		update_name(index, dev->name);
 		hciops_power_off(index);
 		goto done;
 	}
@@ -790,8 +809,10 @@ static gboolean init_adapter(int index)
 	start_adapter(index);
 
 	name = btd_adapter_get_name(adapter);
-	if (name)
+	if (name) {
+		DBG("hci%d name '%s'", index, name);
 		hciops_set_name(index, name);
+	}
 
 	btd_adapter_get_class(adapter, &major, &minor);
 	hciops_set_dev_class(index, major, minor);
@@ -1617,6 +1638,8 @@ static void update_name(int index, const char *name)
 {
 	struct btd_adapter *adapter;
 
+	DBG("hci%d name '%s'", index, name);
+
 	adapter = manager_find_adapter_by_id(index);
 	if (adapter)
 		adapter_name_changed(adapter, name);
@@ -1649,6 +1672,8 @@ static void read_local_name_complete(int index, read_local_name_rp *rp)
 	if (rp->status)
 		return;
 
+	cancel_local_name_timeout(index);
+
 	memcpy(dev->name, rp->name, 248);
 	dev->name[248] = '\0';
 
@@ -1659,7 +1684,7 @@ static void read_local_name_complete(int index, read_local_name_rp *rp)
 
 	hci_clear_bit(PENDING_NAME, &dev->pending);
 
-	DBG("Got name for hci%d", index);
+	DBG("Got name '%s' for hci%d", dev->name, index);
 
 	if (!dev->pending && dev->up)
 		init_adapter(index);
@@ -2491,6 +2516,8 @@ static void stop_hci_dev(int index)
 	g_slist_free_full(dev->uuids, g_free);
 	g_slist_free_full(dev->connections, g_free);
 
+	cancel_local_name_timeout(index);
+
 	init_dev_info(index, -1, dev->registered, dev->already_up);
 }
 
@@ -2789,7 +2816,8 @@ static void device_devup_setup(int index)
 
 	if (hci_test_bit(PENDING_NAME, &dev->pending)) {
 		DBG("Pending local name query");
-		g_timeout_add(3000, read_local_name_cb, GINT_TO_POINTER(index));
+		dev->local_name_timeout = g_timeout_add(3000, read_local_name_cb,
+							GINT_TO_POINTER(index));
 	}
 
 	if (hci_test_bit(PENDING_BDADDR, &dev->pending))
@@ -2970,6 +2998,7 @@ static void device_event(int event, int index)
 				btd_adapter_stop(adapter);
 
 			init_pending(index);
+			cancel_local_name_timeout(index);
 		}
 		break;
 	}

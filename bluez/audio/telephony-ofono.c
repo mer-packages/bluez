@@ -933,7 +933,7 @@ done:
 static void handle_network_property(const char *property, DBusMessageIter *variant)
 {
 	const char *status, *operator;
-	unsigned int signals_bar;
+	DBusBasicValue signals_bar;
 
 	if (g_str_equal(property, "Status")) {
 		dbus_message_iter_get_basic(variant, &status);
@@ -962,12 +962,12 @@ static void handle_network_property(const char *property, DBusMessageIter *varia
 		DBG("Operator is %s", operator);
 		g_free(net.operator_name);
 		net.operator_name = g_strdup(operator);
-	} else if (g_str_equal(property, "SignalStrength")) {
+	} else if (g_str_equal(property, "Strength")) {
 		dbus_message_iter_get_basic(variant, &signals_bar);
-		DBG("SignalStrength is %d", signals_bar);
-		net.signals_bar = signals_bar;
+		DBG("Strength is %u", (uint32_t)signals_bar.byt);
+		net.signals_bar = (uint32_t)signals_bar.byt;
 		telephony_update_indicator(ofono_indicators, "signal",
-						(signals_bar + 20) / 21);
+						(net.signals_bar + 20) / 21);
 	}
 }
 

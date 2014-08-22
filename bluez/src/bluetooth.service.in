@@ -1,10 +1,13 @@
 [Unit]
 Description=Bluetooth service
+After=connman.service
+ConditionPathExists=!/run/systemd/boot-status/ACT_DEAD
 
 [Service]
 Type=dbus
 BusName=org.bluez
 ExecStart=@prefix@/sbin/bluetoothd -n
+Restart=on-failure
 
 [Install]
 WantedBy=bluetooth.target

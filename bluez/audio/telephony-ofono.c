@@ -301,6 +301,24 @@ static int release_answer_calls(void)
 						NULL, NULL, DBUS_TYPE_INVALID);
 }
 
+static int release_swap_calls(void)
+{
+	DBG("%s", modem_obj_path);
+	return send_method_call(OFONO_BUS_NAME, modem_obj_path,
+						OFONO_VCMANAGER_INTERFACE,
+						"ReleaseAndSwap",
+						NULL, NULL, DBUS_TYPE_INVALID);
+}
+
+static int hold_answer_calls(void)
+{
+	DBG("%s", modem_obj_path);
+	return send_method_call(OFONO_BUS_NAME, modem_obj_path,
+						OFONO_VCMANAGER_INTERFACE,
+						"HoldAndAnswer",
+						NULL, NULL, DBUS_TYPE_INVALID);
+}
+
 static int split_call(struct voice_call *call)
 {
 	DBG("%s", modem_obj_path);
@@ -608,8 +626,15 @@ void telephony_call_hold_req(void *telephony_device, const char *cmd)
 			if (release_call(call) != 0)
 				cme_err = CME_ERROR_AG_FAILURE;
 		} else {
-			if (release_answer_calls() != 0)
-				cme_err = CME_ERROR_AG_FAILURE;
+			call = find_vc_with_status(CALL_STATUS_WAITING);
+
+			if (call) {
+				if (release_answer_calls() != 0)
+					cme_err = CME_ERROR_AG_FAILURE;
+			} else {
+				if (release_swap_calls() != 0)
+					cme_err = CME_ERROR_AG_FAILURE;
+			}
 		}
 		break;
 	case '2':
@@ -620,7 +645,7 @@ void telephony_call_hold_req(void *telephony_device, const char *cmd)
 			call = find_vc_with_status(CALL_STATUS_WAITING);
 
 			if (call) {
-				if (answer_call(call))
+				if (hold_answer_calls())
 					cme_err = CME_ERROR_AG_FAILURE;
 			} else {
 				if (swap_calls())

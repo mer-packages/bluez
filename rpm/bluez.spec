@@ -16,43 +16,6 @@ Group:      Applications/System
 License:    GPLv2+
 URL:        http://www.bluez.org/
 Source0:    http://www.kernel.org/pub/linux/bluetooth/%{name}-%{version}.tar.gz
-Patch0:     bluez-fsync.patch
-Patch1:     remove-duplicate-wrong-udev-rule-for-dell-mice.patch
-Patch2:     enable_HFP.patch
-Patch3:     install-more-binary-test.patch
-Patch4:     install-test-scripts.patch
-Patch5:     0001-Adding-snowball-target-and-line-disc.patch
-Patch6:     allow-ofono-communication.patch
-Patch7:     telephony-feature-configuration.patch
-Patch8:     AVRCP-feature-configuration.patch
-Patch9:     bluetoothd-service.patch
-Patch10:    statefs-battery-charge.patch
-Patch11:    telephony-last-dialed.patch
-Patch12:    telephony-signal-strength-indicator.patch
-Patch13:    telephony-call-hold-handling.patch
-Patch14:    telephony-call-hold-handling-take-two.patch
-Patch15:    bluetoothd-handle-rfkilled-adapter.patch
-Patch16:    AVDTP-stream-abort-handling.patch
-Patch17:    HFP-memory-dial-last-dialed-number.patch
-Patch18:    telephony-no-sporadic-hold-indicators.patch
-Patch19:    telephony-release-and-answer-workaround.patch
-Patch20:    bluetoothd-local-name-fix.patch
-Patch21:    telephony-no-sporadic-call-status-indicators.patch
-Patch22:    telephony-hold-and-dial.patch
-Patch23:    bluetoothd-startup-dbus-crash-fix.patch
-Patch24:    AVDTP-fix-crash-after-disconnecting.patch
-Patch25:    AVCTP-initialize-uinput-fd.patch
-Patch26:    HFP-feature-advertisment.patch
-Patch27:    bluetoothd-connect-BT-keyboard-crash-fix.patch
-Patch28:    AVCTP-handle-simultaneous-connections.patch
-Patch29:    AVDTP-start-after-timeout.patch
-Patch30:    AVCTP-invalid-pid-response.patch
-Patch31:    HCI-fix-long-local-name-handling.patch
-Patch32:    HID-auto-reconnect.patch
-Patch33:    network-Fix-introspection-of-Connect-method.patch
-Patch34:    bluetoothd-memleak-fixes.patch
-Patch35:    bluetoothd-cancel-pending-local-name-timeout.patch
-Patch36:    bluez5-hciattach.patch
 Requires:   bluez-libs = %{version}
 Requires:   dbus >= 0.60
 Requires:   hwdata >= 0.215
@@ -169,83 +132,6 @@ This package provides default configs for bluez
 
 %prep
 %setup -q -n %{name}-%{version}/%{name}
-
-# bluez-fsync.patch
-%patch0 -p1
-# remove-duplicate-wrong-udev-rule-for-dell-mice.patch
-%patch1 -p1
-# enable_HFP.patch
-%patch2 -p1
-# install-more-binary-test.patch
-%patch3 -p1
-# install-test-scripts.patch
-%patch4 -p1
-# 0001-Adding-snowball-target-and-line-disc.patch
-%patch5 -p1
-# allow-ofono-communication.patch
-%patch6 -p1
-# telephony-feature-configuration.patch
-%patch7 -p1
-# AVRCP-feature-configuration.patch
-%patch8 -p1
-# bluetoothd-service.patch
-%patch9 -p1
-# statefs-battery-charge.patch
-%patch10 -p1
-# telephony-last-dialed.patch
-%patch11 -p1
-# telephony-signal-strength-indicator.patch
-%patch12 -p1
-# telephony-call-hold-handling.patch
-%patch13 -p1
-# telephony-call-hold-handling-take-two.patch
-%patch14 -p1
-# bluetoothd-handle-rfkilled-adapter.patch
-%patch15 -p1
-# AVDTP-stream-abort-handling.patch
-%patch16 -p1
-# HFP-memory-dial-last-dialed-number.patch
-%patch17 -p1
-# telephony-no-sporadic-hold-indicators.patch
-%patch18 -p1
-# telephony-release-and-answer-workaround.patch
-%patch19 -p1
-# bluetoothd-local-name-fix.patch
-%patch20 -p1
-# telephony-no-sporadic-call-status-indicators.patch
-%patch21 -p1
-# telephony-hold-and-dial.patch
-%patch22 -p1
-# bluetoothd-startup-dbus-crash-fix.patch
-%patch23 -p1
-# AVDTP-fix-crash-after-disconnecting.patch
-%patch24 -p2
-# AVCTP-initialize-uinput-fd.patch
-%patch25 -p1
-# HFP-feature-advertisment.patch
-%patch26 -p1
-# bluetoothd-connect-BT-keyboard-crash-fix.patch
-%patch27 -p1
-# AVCTP-handle-simultaneous-connections.patch
-%patch28 -p1
-# AVDTP-start-after-timeout.patch
-%patch29 -p1
-# AVCTP-invalid-pid-response.patch
-%patch30 -p1
-# HCI-fix-long-local-name-handling.patch
-%patch31 -p1
-# HID-auto-reconnect.patch
-%patch32 -p1
-# network-Fix-introspection-of-Connect-method.patch
-%patch33 -p1
-# bluetoothd-memleak-fixes.patch
-%patch34 -p1
-# bluetoothd-cancel-pending-local-name-timeout.patch
-%patch35 -p1
-# bluez5-hciattach.patch
-%patch36 -p1
-# >> setup
-# << setup
 
 %build
 # >> build pre

@@ -574,7 +574,8 @@ void telephony_device_connected(void *telephony_device)
 						number_type(coming->number));
 		else
 			telephony_incoming_call_ind(coming->number,
-						number_type(coming->number));
+						number_type(coming->number),
+						FALSE);
 	}
 }
 
@@ -1173,7 +1174,8 @@ static void handle_incoming_call(DBusMessage *msg)
 						number_type(call->number));
 	else
 		telephony_incoming_call_ind(call->number,
-						number_type(call->number));
+						number_type(call->number),
+						FALSE);
 
 	telephony_update_indicator(maemo_indicators, "callsetup",
 					EV_CALLSETUP_INCOMING);
@@ -1287,7 +1289,8 @@ static void call_set_status(struct csd_call *call, dbus_uint32_t status)
 		 * answer incoming call that was previously waiting. */
 		if (prev_status == CSD_CALL_STATUS_WAITING)
 			telephony_incoming_call_ind(call->number,
-						number_type(call->number));
+						number_type(call->number),
+						FALSE);
 		break;
 	case CSD_CALL_STATUS_WAITING:
 		break;

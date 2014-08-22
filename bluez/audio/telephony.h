@@ -197,7 +197,8 @@ int telephony_key_press_rsp(void *telephony_device, cme_error_t err);
 /* Event indications by AG. These are implemented by headset.c */
 int telephony_event_ind(int index);
 int telephony_response_and_hold_ind(int rh);
-int telephony_incoming_call_ind(const char *number, int type);
+int telephony_incoming_call_ind(const char *number, int type,
+				gboolean suppress_ring);
 int telephony_calling_stopped_ind(void);
 int telephony_ready_ind(uint32_t features, const struct indicator *indicators,
 			int rh, const char *chld);

@@ -55,6 +55,7 @@ struct voice_call {
 	guint watch;
 
 	gboolean hold_status_pending;
+	gboolean waiting_for_answer;
 };
 
 static DBusConnection *connection = NULL;
@@ -109,6 +110,24 @@ static struct indicator ofono_indicators[] =
 	{ "roam",	"0,1",	0,	TRUE },
 	{ NULL }
 };
+
+static void waiting_for_answer_clear(struct voice_call *vc)
+{
+	DBG("");
+	vc->waiting_for_answer = FALSE;
+}
+
+static void waiting_for_answer_set(struct voice_call *vc)
+{
+	DBG("");
+	vc->waiting_for_answer = TRUE;
+}
+
+static gboolean waiting_for_answer_is_set(struct voice_call *vc)
+{
+	DBG("%s", vc->waiting_for_answer ? "TRUE" : "FALSE");
+	return vc->waiting_for_answer;
+}
 
 static void hold_status_clear(struct voice_call *vc)
 {
@@ -204,7 +223,8 @@ void telephony_device_connected(void *telephony_device)
 						number_type(coming->number));
 		else
 			telephony_incoming_call_ind(coming->number,
-						number_type(coming->number));
+						number_type(coming->number),
+						FALSE);
 	}
 }
 
@@ -322,13 +342,40 @@ static int release_call(struct voice_call *vc)
 						NULL, NULL, DBUS_TYPE_INVALID);
 }
 
+static void answer_waiting_call(void)
+{
+	GSList *l;
+
+	DBG("");
+
+	for (l = calls; l != NULL; l = l->next) {
+		struct voice_call *vc = l->data;
+		if (waiting_for_answer_is_set(vc) == TRUE) {
+			answer_call(vc);
+			break;
+		}
+	}
+}
+
 static int release_answer_calls(void)
 {
-	DBG("%s", modem_obj_path);
-	return send_method_call(OFONO_BUS_NAME, modem_obj_path,
-						OFONO_VCMANAGER_INTERFACE,
-						"ReleaseAndAnswer",
-						NULL, NULL, DBUS_TYPE_INVALID);
+	struct voice_call *active = NULL;
+	struct voice_call *waiting = NULL;
+
+	DBG("");
+
+	active = find_vc_with_status(CALL_STATUS_ACTIVE);
+	waiting = find_vc_with_status(CALL_STATUS_WAITING);
+	if (active == NULL || waiting == NULL)
+		return -EIO;
+
+	/* Answer this call when the current call has disconnected */
+	waiting_for_answer_set(waiting);
+
+	return send_method_call(OFONO_BUS_NAME, active->obj_path,
+						OFONO_VC_INTERFACE, "Hangup",
+						NULL, NULL,
+						DBUS_TYPE_INVALID);
 }
 
 static int release_swap_calls(void)
@@ -874,6 +921,9 @@ static gboolean handle_vc_property_changed(DBusConnection *conn,
 		if (g_str_equal(state, "disconnected")) {
 			calls = g_slist_remove(calls, vc);
 			call_free(vc);
+			/* Answer waiting call if the disconnect was part
+			   of release and answer (AT+CHLD=1) processing */
+			answer_waiting_call();
 		} else if (g_str_equal(state, "active")) {
 			telephony_update_indicator(ofono_indicators,
 							"call", EV_CALL_ACTIVE);
@@ -893,7 +943,9 @@ static gboolean handle_vc_property_changed(DBusConnection *conn,
 			telephony_update_indicator(ofono_indicators,
 					"callsetup", EV_CALLSETUP_INCOMING);
 			telephony_incoming_call_ind(vc->number,
-						NUMBER_TYPE_TELEPHONY);
+						NUMBER_TYPE_TELEPHONY,
+						waiting_for_answer_is_set(vc));
+			waiting_for_answer_clear(vc);
 			vc->status = CALL_STATUS_INCOMING;
 			vc->originating = FALSE;
 		} else if (g_str_equal(state, "held")) {
@@ -967,7 +1019,8 @@ static struct voice_call *call_new(const char *path, DBusMessageIter *properties
 		vc->originating = FALSE;
 		telephony_update_indicator(ofono_indicators, "callsetup",
 					EV_CALLSETUP_INCOMING);
-		telephony_incoming_call_ind(vc->number, NUMBER_TYPE_TELEPHONY);
+		telephony_incoming_call_ind(vc->number, NUMBER_TYPE_TELEPHONY,
+			FALSE);
 		break;
 	case CALL_STATUS_DIALING:
 		DBG("CALL_STATUS_DIALING");

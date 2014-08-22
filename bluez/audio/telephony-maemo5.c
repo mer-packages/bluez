@@ -490,7 +490,8 @@ void telephony_device_connected(void *telephony_device)
 						number_type(coming->number));
 		else
 			telephony_incoming_call_ind(coming->number,
-						number_type(coming->number));
+						number_type(coming->number),
+						FALSE);
 	}
 }
 
@@ -945,7 +946,8 @@ static void handle_incoming_call(DBusMessage *msg)
 						number_type(call->number));
 	else
 		telephony_incoming_call_ind(call->number,
-						number_type(call->number));
+						number_type(call->number),
+						FALSE);
 }
 
 static void handle_outgoing_call(DBusMessage *msg)

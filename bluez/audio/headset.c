@@ -2820,7 +2820,8 @@ int telephony_response_and_hold_ind(int rh)
 	return 0;
 }
 
-int telephony_incoming_call_ind(const char *number, int type)
+int telephony_incoming_call_ind(const char *number, int type,
+				gboolean suppress_ring)
 {
 	struct audio_device *dev;
 	struct headset *hs;
@@ -2854,6 +2855,11 @@ int telephony_incoming_call_ind(const char *number, int type)
 	if (slc->inband_ring && hs->hfp_active &&
 					hs->state != HEADSET_STATE_PLAYING) {
 		slc->pending_ring = TRUE;
+		return 0;
+	}
+
+	if (suppress_ring) {
+		DBG("Suppressing ring signalling.");
 		return 0;
 	}
 

@@ -258,7 +258,7 @@ static DBusMessage *incoming_call(DBusConnection *conn, DBusMessage *msg,
 	active_call_status = CALL_STATUS_INCOMING;
 	active_call_dir = CALL_DIR_INCOMING;
 
-	telephony_incoming_call_ind(number, NUMBER_TYPE_TELEPHONY);
+	telephony_incoming_call_ind(number, NUMBER_TYPE_TELEPHONY, FALSE);
 
 	return dbus_message_new_method_return(msg);
 }

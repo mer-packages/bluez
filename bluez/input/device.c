@@ -67,6 +67,20 @@
 
 #define FI_FLAG_CONNECTED	1
 
+enum reconnect_mode_t {
+	RECONNECT_NONE = 0,
+	RECONNECT_DEVICE,
+	RECONNECT_HOST,
+	RECONNECT_ANY
+};
+
+static const char * const _reconnect_mode_str[] = {
+	"none",
+	"device",
+	"host",
+	"any"
+};
+
 struct input_conn {
 	struct fake_input	*fake;
 	DBusMessage		*pending_connect;
@@ -92,9 +106,21 @@ struct input_device {
 	char			*name;
 	struct btd_device	*device;
 	GSList			*connections;
+	enum reconnect_mode_t   reconnect_mode;
+	guint			reconnect_timer;
+	uint32_t		reconnect_attempt;
+	gboolean                temp;
 };
 
 static GSList *devices = NULL;
+
+static void input_device_enter_reconnect_mode(struct input_device *idev);
+static const char *reconnect_mode_to_string(const enum reconnect_mode_t mode);
+
+static const char *reconnect_mode_to_string(const enum reconnect_mode_t mode)
+{
+	return _reconnect_mode_str[mode];
+}
 
 static struct input_device *find_device_by_path(GSList *list, const char *path)
 {
@@ -149,6 +175,9 @@ static void input_device_free(struct input_device *idev)
 {
 	if (idev->dc_id)
 		device_remove_disconnect_watch(idev->device, idev->dc_id);
+
+	if (idev->reconnect_timer > 0)
+		g_source_remove(idev->reconnect_timer);
 
 	dbus_connection_unref(idev->conn);
 	btd_device_unref(idev->device);
@@ -388,6 +417,8 @@ static gboolean intr_watch_cb(GIOChannel *chan, GIOCondition cond, gpointer data
 	struct input_device *idev = iconn->idev;
 	gboolean connected = FALSE;
 
+	DBG("");
+
 	/* Checking for ctrl_watch avoids a double g_io_channel_shutdown since
 	 * it's likely that ctrl_watch_cb has been queued for dispatching in
 	 * this mainloop iteration */
@@ -409,12 +440,17 @@ static gboolean intr_watch_cb(GIOChannel *chan, GIOCondition cond, gpointer data
 	if (iconn->ctrl_io && !(cond & G_IO_NVAL))
 		g_io_channel_shutdown(iconn->ctrl_io, TRUE, NULL);
 
+	/* Enter the auto-reconnect mode if needed */
+	input_device_enter_reconnect_mode(idev);
+
 	return FALSE;
 }
 
 static gboolean ctrl_watch_cb(GIOChannel *chan, GIOCondition cond, gpointer data)
 {
 	struct input_conn *iconn = data;
+
+	DBG("");
 
 	/* Checking for intr_watch avoids a double g_io_channel_shutdown since
 	 * it's likely that intr_watch_cb has been queued for dispatching in
@@ -438,12 +474,16 @@ static gboolean fake_hid_connect(struct input_conn *iconn, GError **err)
 {
 	struct fake_hid *fhid = iconn->fake->priv;
 
+	DBG("");
+
 	return fhid->connect(iconn->fake, err);
 }
 
 static int fake_hid_disconnect(struct input_conn *iconn)
 {
 	struct fake_hid *fhid = iconn->fake->priv;
+
+	DBG("");
 
 	return fhid->disconnect(iconn->fake);
 }
@@ -471,6 +511,39 @@ static void epox_endian_quirk(unsigned char *data, int size)
 			data[i + 11] = 0x00;
 		}
 	}
+}
+
+static enum reconnect_mode_t hid_reconnection_mode(gboolean reconnect_initiate,
+						gboolean normally_connectable)
+{
+	if (!reconnect_initiate && !normally_connectable)
+		return RECONNECT_NONE;
+	else if (!reconnect_initiate && normally_connectable)
+		return RECONNECT_HOST;
+	else if (reconnect_initiate && !normally_connectable)
+		return RECONNECT_DEVICE;
+	else /* (reconnect_initiate && normally_connectable) */
+		return RECONNECT_ANY;
+}
+
+static void extract_hid_props(struct input_device *idev,
+			const sdp_record_t *rec)
+{
+	/* Extract HID connectability */
+	gboolean reconnect_initiate, normally_connectable;
+	sdp_data_t *pdlist;
+
+	/* HIDNormallyConnectable is optional and assumed FALSE
+	 * if not present. */
+	pdlist = sdp_data_get(rec, SDP_ATTR_HID_RECONNECT_INITIATE);
+	reconnect_initiate = pdlist ? pdlist->val.uint8 : TRUE;
+	
+	pdlist = sdp_data_get(rec, SDP_ATTR_HID_NORMALLY_CONNECTABLE);
+	normally_connectable = pdlist ? pdlist->val.uint8 : FALSE;
+	
+	/* Update local values */
+	idev->reconnect_mode =
+		hid_reconnection_mode(reconnect_initiate, normally_connectable);
 }
 
 static void extract_hid_record(sdp_record_t *rec, struct hidp_connadd_req *req)
@@ -534,6 +607,8 @@ static int ioctl_connadd(struct hidp_connadd_req *req)
 {
 	int ctl, err = 0;
 
+	DBG("");
+
 	ctl = socket(AF_BLUETOOTH, SOCK_RAW, BTPROTO_HIDP);
 	if (ctl < 0)
 		return -errno;
@@ -550,6 +625,8 @@ static void encrypt_completed(uint8_t status, gpointer user_data)
 {
 	struct hidp_connadd_req *req = user_data;
 	int err;
+
+	DBG("");
 
 	if (status) {
 		error("Encryption failed: %s(0x%x)",
@@ -588,7 +665,7 @@ static gboolean encrypt_notify(GIOChannel *io, GIOCondition condition,
 	return FALSE;
 }
 
-static int hidp_add_connection(const struct input_device *idev,
+static int hidp_add_connection(struct input_device *idev,
 					struct input_conn *iconn)
 {
 	struct hidp_connadd_req *req;
@@ -598,6 +675,8 @@ static int hidp_add_connection(const struct input_device *idev,
 	char src_addr[18], dst_addr[18];
 	GError *gerr = NULL;
 	int err;
+
+	DBG("idev %p", idev);
 
 	req = g_new0(struct hidp_connadd_req, 1);
 	req->ctrl_sock = g_io_channel_unix_get_fd(iconn->ctrl_io);
@@ -616,6 +695,7 @@ static int hidp_add_connection(const struct input_device *idev,
 	}
 
 	extract_hid_record(rec, req);
+	extract_hid_props(idev, rec);
 	sdp_record_free(rec);
 
 	req->vendor = btd_device_get_vendor(idev->device);
@@ -723,6 +803,8 @@ static int connection_disconnect(struct input_conn *iconn, uint32_t flags)
 	struct hidp_conninfo ci;
 	int ctl, err = 0;
 
+	DBG("idev %p", idev);
+
 	/* Fake input disconnect */
 	if (fake) {
 		err = fake->disconnect(iconn);
@@ -772,6 +854,8 @@ static int disconnect(struct input_device *idev, uint32_t flags)
 	struct input_conn *iconn = NULL;
 	GSList *l;
 
+	DBG("idev %p", idev);
+
 	for (l = idev->connections; l; l = l->next) {
 		iconn = l->data;
 
@@ -804,6 +888,8 @@ static int input_device_connected(struct input_device *idev,
 	dbus_bool_t connected;
 	int err;
 
+	DBG("idev %p", idev);
+
 	if (iconn->intr_io == NULL || iconn->ctrl_io == NULL)
 		return -ENOTCONN;
 
@@ -833,9 +919,11 @@ static void interrupt_connect_cb(GIOChannel *chan, GError *conn_err,
 {
 	struct input_conn *iconn = user_data;
 	struct input_device *idev = iconn->idev;
-	DBusMessage *reply;
+	DBusMessage *reply = NULL;
 	int err;
 	const char *err_msg;
+
+	DBG("idev %p", idev);
 
 	if (conn_err) {
 		err_msg = conn_err->message;
@@ -849,20 +937,22 @@ static void interrupt_connect_cb(GIOChannel *chan, GError *conn_err,
 	}
 
 	/* Replying to the requestor */
-	g_dbus_send_reply(idev->conn, iconn->pending_connect, DBUS_TYPE_INVALID);
-
-	dbus_message_unref(iconn->pending_connect);
-	iconn->pending_connect = NULL;
+	if (iconn->pending_connect) {
+		g_dbus_send_reply(idev->conn, iconn->pending_connect, DBUS_TYPE_INVALID);
+		dbus_message_unref(iconn->pending_connect);
+		iconn->pending_connect = NULL;
+	}
 
 	return;
 
 failed:
 	error("%s", err_msg);
-	reply = btd_error_failed(iconn->pending_connect, err_msg);
-	g_dbus_send_message(idev->conn, reply);
-
-	dbus_message_unref(iconn->pending_connect);
-	iconn->pending_connect = NULL;
+	if (iconn->pending_connect) {
+		reply = btd_error_failed(iconn->pending_connect, err_msg);
+		g_dbus_send_message(idev->conn, reply);
+		dbus_message_unref(iconn->pending_connect);
+		iconn->pending_connect = NULL;
+	}
 
 	/* So we guarantee the interrupt channel is closed before the
 	 * control channel (if we only do unref GLib will close it only
@@ -884,14 +974,17 @@ static void control_connect_cb(GIOChannel *chan, GError *conn_err,
 {
 	struct input_conn *iconn = user_data;
 	struct input_device *idev = iconn->idev;
-	DBusMessage *reply;
+	DBusMessage *reply = NULL;
 	GIOChannel *io;
 	GError *err = NULL;
 
+	DBG("");
+
 	if (conn_err) {
 		error("%s", conn_err->message);
-		reply = btd_error_failed(iconn->pending_connect,
-						conn_err->message);
+		if (iconn->pending_connect)
+			reply = btd_error_failed(iconn->pending_connect,
+							conn_err->message);
 		goto failed;
 	}
 
@@ -905,7 +998,8 @@ static void control_connect_cb(GIOChannel *chan, GError *conn_err,
 				BT_IO_OPT_INVALID);
 	if (!io) {
 		error("%s", err->message);
-		reply = btd_error_failed(iconn->pending_connect,
+		if (iconn->pending_connect)
+			reply = btd_error_failed(iconn->pending_connect,
 							err->message);
 		g_error_free(err);
 		goto failed;
@@ -918,14 +1012,19 @@ static void control_connect_cb(GIOChannel *chan, GError *conn_err,
 failed:
 	g_io_channel_unref(iconn->ctrl_io);
 	iconn->ctrl_io = NULL;
-	g_dbus_send_message(idev->conn, reply);
-	dbus_message_unref(iconn->pending_connect);
-	iconn->pending_connect = NULL;
+	if (reply)
+		g_dbus_send_message(idev->conn, reply);
+	if (iconn->pending_connect) {
+		dbus_message_unref(iconn->pending_connect);
+		iconn->pending_connect = NULL;
+	}
 }
 
 static int fake_disconnect(struct input_conn *iconn)
 {
 	struct fake_input *fake = iconn->fake;
+
+	DBG("");
 
 	if (!fake->io)
 		return -ENOTCONN;
@@ -943,6 +1042,109 @@ static int fake_disconnect(struct input_conn *iconn)
 	return 0;
 }
 
+static void dev_connect(struct input_device *idev,
+			struct input_conn *iconn,
+			GError **err)
+{
+	struct fake_input *fake;
+
+	DBG("");
+
+	fake = iconn->fake;
+
+	if (fake) {
+		/* Fake input device */
+		if (fake->connect(iconn, err))
+			fake->flags |= FI_FLAG_CONNECTED;
+	} else {
+		/* HID devices */
+		GIOChannel *io;
+
+		if (idev->disable_sdp)
+			bt_clear_cached_session(&idev->src, &idev->dst);
+
+		io = bt_io_connect(BT_IO_L2CAP, control_connect_cb, iconn,
+					NULL, err,
+					BT_IO_OPT_SOURCE_BDADDR, &idev->src,
+					BT_IO_OPT_DEST_BDADDR, &idev->dst,
+					BT_IO_OPT_PSM, L2CAP_PSM_HIDP_CTRL,
+					BT_IO_OPT_SEC_LEVEL, BT_IO_SEC_LOW,
+					BT_IO_OPT_INVALID);
+		iconn->ctrl_io = io;
+	}
+
+}
+
+static gboolean input_device_auto_reconnect(gpointer user_data)
+{
+	struct input_device *idev = user_data;
+	struct input_conn *iconn;
+	GError *err = NULL;
+
+	DBG("idev %p", idev);
+
+	DBG("path=%s, attempt=%d", idev->path, idev->reconnect_attempt);
+
+	/* Stop the recurrent reconnection attempts if the device is reconnected
+	 * or is marked for removal. */
+	if (device_is_temporary(idev->device) ||
+					device_is_connected(idev->device))
+		return FALSE;
+
+	/* Only attempt an auto-reconnect for at most 3 minutes (6 * 30s). */
+	if (idev->reconnect_attempt >= 6)
+		return FALSE;
+
+	iconn = find_connection(idev->connections, HID_UUID);
+	if (iconn == NULL)
+		return FALSE;
+
+	if (iconn->ctrl_io)
+		return FALSE;
+
+	if (is_connected(iconn))
+		return FALSE;
+
+	idev->reconnect_attempt++;
+
+	dev_connect(idev, iconn, &err);
+	if (err != NULL) {
+		error("%s", err->message);
+		g_error_free(err);
+		return FALSE;
+	}
+
+	return TRUE;
+}
+
+static void input_device_enter_reconnect_mode(struct input_device *idev)
+{
+	DBG("idev %p", idev);
+
+	DBG("path=%s reconnect_mode=%s", idev->path,
+				reconnect_mode_to_string(idev->reconnect_mode));
+
+	/* Only attempt an auto-reconnect when the device is required to accept
+	 * reconnections from the host. */
+	if (idev->reconnect_mode != RECONNECT_ANY &&
+				idev->reconnect_mode != RECONNECT_HOST)
+		return;
+
+	/* If the device is temporary we are not required to reconnect with the
+	 * device. This is likely the case of a removing device. */
+	if (device_is_temporary(idev->device))
+		return;
+
+	if (idev->reconnect_timer > 0)
+		g_source_remove(idev->reconnect_timer);
+
+	DBG("registering auto-reconnect");
+	idev->reconnect_attempt = 0;
+	idev->reconnect_timer = g_timeout_add_seconds(30,
+					input_device_auto_reconnect, idev);
+
+}
+
 /*
  * Input Device methods
  */
@@ -951,9 +1153,10 @@ static DBusMessage *input_device_connect(DBusConnection *conn,
 {
 	struct input_device *idev = data;
 	struct input_conn *iconn;
-	struct fake_input *fake;
 	DBusMessage *reply;
 	GError *err = NULL;
+
+	DBG("idev %p", idev);
 
 	iconn = find_connection(idev->connections, HID_UUID);
 	if (!iconn)
@@ -966,28 +1169,8 @@ static DBusMessage *input_device_connect(DBusConnection *conn,
 		return btd_error_already_connected(msg);
 
 	iconn->pending_connect = dbus_message_ref(msg);
-	fake = iconn->fake;
 
-	if (fake) {
-		/* Fake input device */
-		if (fake->connect(iconn, &err))
-			fake->flags |= FI_FLAG_CONNECTED;
-	} else {
-		/* HID devices */
-		GIOChannel *io;
-
-		if (idev->disable_sdp)
-			bt_clear_cached_session(&idev->src, &idev->dst);
-
-		io = bt_io_connect(BT_IO_L2CAP, control_connect_cb, iconn,
-					NULL, &err,
-					BT_IO_OPT_SOURCE_BDADDR, &idev->src,
-					BT_IO_OPT_DEST_BDADDR, &idev->dst,
-					BT_IO_OPT_PSM, L2CAP_PSM_HIDP_CTRL,
-					BT_IO_OPT_SEC_LEVEL, BT_IO_SEC_LOW,
-					BT_IO_OPT_INVALID);
-		iconn->ctrl_io = io;
-	}
+	dev_connect(idev, iconn, &err);
 
 	if (err == NULL)
 		return NULL;
@@ -1006,6 +1189,8 @@ static DBusMessage *input_device_disconnect(DBusConnection *conn,
 	struct input_device *idev = data;
 	int err;
 
+	DBG("idev %p", idev);
+
 	err = disconnect(idev, 0);
 	if (err < 0)
 		return btd_error_failed(msg, strerror(-err));
@@ -1016,6 +1201,8 @@ static DBusMessage *input_device_disconnect(DBusConnection *conn,
 static void device_unregister(void *data)
 {
 	struct input_device *idev = data;
+
+	DBG("idev %p", idev);
 
 	DBG("Unregistered interface %s on path %s", INPUT_DEVICE_INTERFACE,
 								idev->path);
@@ -1039,6 +1226,7 @@ static DBusMessage *input_device_get_properties(DBusConnection *conn,
 	DBusMessageIter iter;
 	DBusMessageIter dict;
 	dbus_bool_t connected;
+	const char *reconnect_mode = NULL;
 
 	reply = dbus_message_new_method_return(msg);
 	if (!reply)
@@ -1055,6 +1243,11 @@ static DBusMessage *input_device_get_properties(DBusConnection *conn,
 	connected = !!g_slist_find_custom(idev->connections, NULL,
 					(GCompareFunc) connected_cmp);
 	dict_append_entry(&dict, "Connected", DBUS_TYPE_BOOLEAN, &connected);
+
+	/* Reconnection mode */
+	reconnect_mode = reconnect_mode_to_string(idev->reconnect_mode);
+	dict_append_entry(&dict, "ReconnectMode", DBUS_TYPE_STRING,
+			&reconnect_mode);
 
 	dbus_message_iter_close_container(&iter, &dict);
 
@@ -1085,6 +1278,8 @@ static struct input_device *input_device_new(DBusConnection *conn,
 	struct btd_adapter *adapter = device_get_adapter(device);
 	struct input_device *idev;
 	char name[249], src_addr[18], dst_addr[18];
+
+	DBG("path %s", path);
 
 	idev = g_new0(struct input_device, 1);
 	adapter_get_address(adapter, &idev->src);
@@ -1120,6 +1315,8 @@ static struct input_conn *input_conn_new(struct input_device *idev,
 {
 	struct input_conn *iconn;
 
+	DBG("idev %p, uuid %s", idev, uuid);
+
 	iconn = g_new0(struct input_conn, 1);
 	iconn->timeout = timeout;
 	iconn->uuid = g_strdup(uuid);
@@ -1144,6 +1341,8 @@ int input_device_register(DBusConnection *conn, struct btd_device *device,
 	struct input_device *idev;
 	struct input_conn *iconn;
 
+	DBG("path %s, uuid %s", path, uuid);
+
 	idev = find_device_by_path(devices, path);
 	if (!idev) {
 		idev = input_device_new(conn, device, path, rec->handle,
@@ -1165,6 +1364,8 @@ int fake_input_register(DBusConnection *conn, struct btd_device *device,
 {
 	struct input_device *idev;
 	struct input_conn *iconn;
+
+	DBG("path %s, uuid %s", path, uuid);
 
 	idev = find_device_by_path(devices, path);
 	if (!idev) {
@@ -1205,6 +1406,8 @@ int input_device_unregister(const char *path, const char *uuid)
 	struct input_device *idev;
 	struct input_conn *iconn;
 
+	DBG("path %s, uuid %s", path, uuid);
+
 	idev = find_device_by_path(devices, path);
 	if (idev == NULL)
 		return -EINVAL;
@@ -1233,6 +1436,8 @@ static int input_device_connadd(struct input_device *idev,
 {
 	int err;
 
+	DBG("idev %p", idev);
+
 	err = input_device_connected(idev, iconn);
 	if (err < 0)
 		goto error;
@@ -1254,11 +1459,45 @@ error:
 	return err;
 }
 
+static struct btd_device *device_for_connection(const bdaddr_t *src,
+						const bdaddr_t *dst)
+{
+	struct btd_adapter *adapter;
+	struct btd_device *device;
+	char sstr[18];
+	char dstr[18];
+
+	ba2str(src, sstr);
+	ba2str(dst, dstr);
+
+	adapter = manager_find_adapter(src);
+	if (adapter == NULL) {
+		DBG("No adapter for address %s.", sstr);
+		return NULL;
+	}
+	DBG("Adapter found.");
+
+	device = adapter_find_device(adapter, dstr);
+	if (device == NULL) {
+		DBG("No device for address %s.", dstr);
+		return NULL;
+	}
+
+	return device;
+}
+
 int input_device_set_channel(const bdaddr_t *src, const bdaddr_t *dst, int psm,
 								GIOChannel *io)
 {
 	struct input_device *idev = find_device(src, dst);
 	struct input_conn *iconn;
+	char sstr[18], dstr[18];
+
+	ba2str(src, sstr);
+	ba2str(dst, dstr);
+	DBG("src %s, dst %s", sstr, dstr);
+
+	DBG("idev %p", idev);
 
 	if (!idev)
 		return -ENOENT;
@@ -1290,6 +1529,13 @@ int input_device_close_channels(const bdaddr_t *src, const bdaddr_t *dst)
 {
 	struct input_device *idev = find_device(src, dst);
 	struct input_conn *iconn;
+	char sstr[18], dstr[18];
+
+	ba2str(src, sstr);
+	ba2str(dst, dstr);
+	DBG("src %s, dst %s", sstr, dstr);
+
+	DBG("idev %p", idev);
 
 	if (!idev)
 		return -ENOENT;

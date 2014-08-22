@@ -50,6 +50,7 @@ int device_browse_primary(struct btd_device *device, DBusConnection *conn,
 int device_browse_sdp(struct btd_device *device, DBusConnection *conn,
 			DBusMessage *msg, uuid_t *search, gboolean reverse);
 void device_probe_drivers(struct btd_device *device, GSList *profiles);
+gboolean device_has_service_records(struct btd_device *device);
 const sdp_record_t *btd_device_get_record(struct btd_device *device,
 						const char *uuid);
 GSList *btd_device_get_primaries(struct btd_device *device);

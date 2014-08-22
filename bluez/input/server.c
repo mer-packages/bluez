@@ -42,13 +42,26 @@
 #include "adapter.h"
 #include "device.h"
 #include "server.h"
+#include "../src/manager.h"
+#include "../src/device.h"
+
+#define MAX_ACCEPT_RETRIES 29
 
 static GSList *servers = NULL;
+
 struct input_server {
 	bdaddr_t src;
 	GIOChannel *ctrl;
 	GIOChannel *intr;
 	GIOChannel *confirm;
+
+	struct {
+		GIOChannel *chan;
+		int retries;
+		bdaddr_t src;
+		bdaddr_t dst;
+		int timer;
+	} pending_accept;
 };
 
 static gint server_cmp(gconstpointer s, gconstpointer user_data)
@@ -104,6 +117,140 @@ static void connect_event_cb(GIOChannel *chan, GError *err, gpointer data)
 	g_io_channel_shutdown(chan, TRUE, NULL);
 }
 
+static struct btd_device *device_for_connection(const bdaddr_t *src,
+                                                const bdaddr_t *dst)
+{
+	struct btd_adapter *adapter;
+	struct btd_device *device;
+	char sstr[18];
+	char dstr[18];
+
+	ba2str(src, sstr);
+	ba2str(dst, dstr);
+
+	adapter = manager_find_adapter(src);
+	if (adapter == NULL) {
+		DBG("No adapter for address %s.", sstr);
+		return NULL;
+	}
+	DBG("Adapter found.");
+
+	device = adapter_find_device(adapter, dstr);
+	if (device == NULL) {
+		DBG("No device for address %s.", dstr);
+		return NULL;
+	}
+
+	return device;
+}
+
+static gboolean server_accept(struct input_server *server)
+{
+	GError *err = NULL;
+
+	DBG("");
+
+	if (!bt_io_accept(server->pending_accept.chan, connect_event_cb,
+				server, NULL, &err)) {
+		error("bt_io_accept: %s", err->message);
+		g_error_free(err);
+		return FALSE;
+	}
+
+	return TRUE;
+}
+
+static gboolean retry_server_accept(void *user_data)
+{
+	struct input_server *server = user_data;
+	struct btd_device *device = NULL;
+
+	DBG("");
+
+	device = device_for_connection(&server->pending_accept.src,
+				&server->pending_accept.dst);
+	if (!device) {
+		DBG("No device");
+		goto cleanup;
+	}
+
+	if (device_has_service_records(device)) {
+		DBG("Device has service records");
+		if (!server_accept(server))
+			DBG("Accept failed");
+		goto cleanup;
+	}
+
+	if (server->pending_accept.retries >= MAX_ACCEPT_RETRIES) {
+		DBG("Retry cap reached.");
+		goto cleanup;
+	}
+
+	server->pending_accept.retries++;
+	return TRUE;
+	
+cleanup:
+	server->pending_accept.timer = 0;
+	g_io_channel_unref(server->pending_accept.chan);
+	server->pending_accept.chan = NULL;
+	return FALSE;
+}
+
+static void ctrl_confirm_event_cb(GIOChannel *chan, gpointer user_data)
+{
+	struct input_server *server = user_data;
+	bdaddr_t src, dst;
+	GError *err = NULL;
+	struct btd_device *device = NULL;
+
+	DBG("");
+
+	bt_io_get(chan, BT_IO_L2CAP, &err,
+			BT_IO_OPT_SOURCE_BDADDR, &src,
+			BT_IO_OPT_DEST_BDADDR, &dst,
+			BT_IO_OPT_INVALID);
+	if (err) {
+		error("%s", err->message);
+		g_error_free(err);
+		goto drop;
+	}
+
+	device = device_for_connection(&src, &dst);
+	if (!device) {
+		DBG("No device.");
+		goto drop;
+	}
+
+	if (device_has_service_records(device)) {
+		DBG("Device has service records");
+		server->pending_accept.chan = chan;
+		if (server_accept(server))
+			return;
+
+		DBG("Accept failed");
+		goto drop;
+	}
+
+	if (server->pending_accept.timer) {
+		DBG("Accept already pending.");
+		goto drop;
+	}
+
+	DBG("Device has no service records, pending accept.");
+	server->pending_accept.chan = chan;
+	g_io_channel_ref(server->pending_accept.chan);
+	server->pending_accept.retries = 0;
+	server->pending_accept.src = src;
+	server->pending_accept.dst = dst;
+	server->pending_accept.timer = g_timeout_add_seconds(1,
+							retry_server_accept,
+							server);
+	return;
+
+drop:
+	g_io_channel_shutdown(chan, TRUE, NULL);
+}
+
 static void auth_callback(DBusError *derr, void *user_data)
 {
 	struct input_server *server = user_data;
@@ -144,13 +291,15 @@ reject:
 	input_device_close_channels(&src, &dst);
 }
 
-static void confirm_event_cb(GIOChannel *chan, gpointer user_data)
+static void intr_confirm_event_cb(GIOChannel *chan, gpointer user_data)
 {
 	struct input_server *server = user_data;
 	bdaddr_t src, dst;
 	GError *err = NULL;
 	char addr[18];
 	int ret;
+
+	DBG("");
 
 	bt_io_get(chan, BT_IO_L2CAP, &err,
 			BT_IO_OPT_SOURCE_BDADDR, &src,
@@ -198,7 +347,7 @@ int server_start(const bdaddr_t *src)
 	server = g_new0(struct input_server, 1);
 	bacpy(&server->src, src);
 
-	server->ctrl = bt_io_listen(BT_IO_L2CAP, connect_event_cb, NULL,
+	server->ctrl = bt_io_listen(BT_IO_L2CAP, NULL, ctrl_confirm_event_cb,
 				server, NULL, &err,
 				BT_IO_OPT_SOURCE_BDADDR, src,
 				BT_IO_OPT_PSM, L2CAP_PSM_HIDP_CTRL,
@@ -211,7 +360,7 @@ int server_start(const bdaddr_t *src)
 		return -1;
 	}
 
-	server->intr = bt_io_listen(BT_IO_L2CAP, NULL, confirm_event_cb,
+	server->intr = bt_io_listen(BT_IO_L2CAP, NULL, intr_confirm_event_cb,
 				server, NULL, &err,
 				BT_IO_OPT_SOURCE_BDADDR, src,
 				BT_IO_OPT_PSM, L2CAP_PSM_HIDP_INTR,
@@ -246,6 +395,12 @@ void server_stop(const bdaddr_t *src)
 
 	g_io_channel_shutdown(server->ctrl, TRUE, NULL);
 	g_io_channel_unref(server->ctrl);
+
+	if (server->pending_accept.timer)
+		g_source_remove(server->pending_accept.timer);
+
+	if (server->pending_accept.chan)
+		g_io_channel_unref(server->pending_accept.chan);
 
 	servers = g_slist_remove(servers, server);
 	g_free(server);

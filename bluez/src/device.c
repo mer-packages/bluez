@@ -2992,6 +2992,22 @@ void btd_device_add_uuid(struct btd_device *device, const char *uuid)
 	services_changed(device);
 }
 
+gboolean device_has_service_records(struct btd_device *device)
+{
+	bdaddr_t src;
+
+	if (device->tmp_records)
+		return TRUE;
+
+	adapter_get_address(device->adapter, &src);
+
+	device->tmp_records = read_records(&src, &device->bdaddr);
+	if (!device->tmp_records)
+		return FALSE;
+
+	return TRUE;
+}
+
 const sdp_record_t *btd_device_get_record(struct btd_device *device,
 							const char *uuid)
 {

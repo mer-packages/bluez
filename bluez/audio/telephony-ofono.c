@@ -449,7 +449,13 @@ void telephony_dial_number_req(void *telephony_device, const char *number)
 		return;
 	}
 
-	/* Block memory dialing here; more proper would be to wait for
+	/* Fake memory dialing for memory location one. */
+	if (!strcmp(number, ">1")) {
+		telephony_last_dialed_number_req(telephony_device);
+		return;
+	}
+
+	/* Block other memory dialing; more proper would be to wait for
 	   ofono D-Bus reply, but I think that'd need audio device
 	   refcounting so that it doesn't potentially disappear while
 	   we wait for D-Bus reply. */

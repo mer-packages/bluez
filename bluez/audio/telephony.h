@@ -240,5 +240,5 @@ static inline int telephony_get_indicator(const struct indicator *indicators,
 	return -ENOENT;
 }
 
-int telephony_init(void);
+int telephony_init(uint32_t disabled_features);
 void telephony_exit(void);

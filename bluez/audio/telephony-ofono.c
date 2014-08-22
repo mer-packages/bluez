@@ -1544,7 +1544,7 @@ static void handle_service_disconnect(DBusConnection *conn, void *user_data)
 		modem_removed(modem_obj_path);
 }
 
-int telephony_init(void)
+int telephony_init(uint32_t disabled_features)
 {
 	uint32_t features = AG_FEATURE_EC_ANDOR_NR |
 				AG_FEATURE_INBAND_RINGTONE |
@@ -1556,6 +1556,8 @@ int telephony_init(void)
 	const char *battery_cap = "battery";
 	int ret;
 	guint watch;
+
+	features &= ~disabled_features;
 
 	connection = dbus_bus_get(DBUS_BUS_SYSTEM, NULL);
 

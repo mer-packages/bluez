@@ -409,13 +409,15 @@ static const GDBusSignalTable dummy_signals[] = {
 	{ }
 };
 
-int telephony_init(void)
+int telephony_init(uint32_t disabled_features)
 {
 	uint32_t features = AG_FEATURE_REJECT_A_CALL |
 				AG_FEATURE_ENHANCED_CALL_STATUS |
 				AG_FEATURE_EXTENDED_ERROR_RESULT_CODES;
 
 	DBG("");
+
+	features &= ~disabled_features;
 
 	connection = dbus_bus_get(DBUS_BUS_SYSTEM, NULL);
 

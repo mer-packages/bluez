@@ -118,6 +118,44 @@ static struct enabled_interfaces enabled = {
 	.media		= TRUE,
 };
 
+static void setup_telephony_ag_features(GKeyFile *config,
+					uint32_t *disabled)
+{
+	char **list;
+	int i;
+
+	*disabled = 0;
+
+	if (!config)
+		return;
+
+	list = g_key_file_get_string_list(config,
+					  "Telephony", "Disable",
+					  NULL, NULL);
+
+	for (i = 0; list && list[i] != NULL; i++) {
+		if (g_str_equal(list[i], "ThreeWayCalling"))
+			*disabled |= AG_FEATURE_THREE_WAY_CALLING;
+		else if (g_str_equal(list[i], "EC/NR"))
+			*disabled |= AG_FEATURE_EC_ANDOR_NR;
+		else if (g_str_equal(list[i], "VoiceRecognition"))
+			*disabled |= AG_FEATURE_VOICE_RECOGNITION;
+		else if (g_str_equal(list[i], "InBandRingtone"))
+			*disabled |= AG_FEATURE_INBAND_RINGTONE;
+		else if (g_str_equal(list[i], "VoiceTag"))
+			*disabled |= AG_FEATURE_ATTACH_NUMBER_TO_VOICETAG;
+		else if (g_str_equal(list[i], "CallReject"))
+			*disabled |= AG_FEATURE_REJECT_A_CALL;
+		else if (g_str_equal(list[i], "EnhancedCallStatus"))
+			*disabled |= AG_FEATURE_ENHANCED_CALL_STATUS;
+		else if (g_str_equal(list[i], "EnhancedCallControl"))
+			*disabled |= AG_FEATURE_ENHANCED_CALL_CONTROL;
+		else if (g_str_equal(list[i], "ExtendedErrorResultCodes"))
+			*disabled |= AG_FEATURE_EXTENDED_ERROR_RESULT_CODES;
+	}
+	g_strfreev(list);
+}
+
 static struct audio_adapter *find_adapter(GSList *list,
 					struct btd_adapter *btd_adapter)
 {
@@ -876,10 +914,12 @@ static void state_changed(struct btd_adapter *adapter, gboolean powered)
 	adp->powered = powered;
 
 	if (powered) {
+		uint32_t disabled_features;
 		/* telephony driver already initialized*/
 		if (telephony == TRUE)
 			return;
-		telephony_init();
+		setup_telephony_ag_features(config, &disabled_features);
+		telephony_init(disabled_features);
 		telephony = TRUE;
 		return;
 	}

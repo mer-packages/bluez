@@ -2029,7 +2029,7 @@ static DBusHandlerResult signal_filter(DBusConnection *conn,
 	return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
 }
 
-int telephony_init(void)
+int telephony_init(uint32_t disabled_features)
 {
 	const char *battery_cap = "battery";
 	uint32_t features = AG_FEATURE_EC_ANDOR_NR |
@@ -2039,6 +2039,8 @@ int telephony_init(void)
 				AG_FEATURE_ENHANCED_CALL_CONTROL |
 				AG_FEATURE_EXTENDED_ERROR_RESULT_CODES |
 				AG_FEATURE_THREE_WAY_CALLING;
+
+	features &= ~disabled_features;
 
 	connection = dbus_bus_get(DBUS_BUS_SYSTEM, NULL);
 

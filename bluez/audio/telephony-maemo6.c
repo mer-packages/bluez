@@ -2115,7 +2115,7 @@ done:
 	remove_pending(call);
 }
 
-int telephony_init(void)
+int telephony_init(uint32_t disabled_features)
 {
 	const char *battery_cap = "battery";
 	uint32_t features = AG_FEATURE_EC_ANDOR_NR |
@@ -2128,6 +2128,8 @@ int telephony_init(void)
 	int i;
 
 	DBG("");
+
+	features &= ~disabled_features;
 
 	connection = dbus_bus_get(DBUS_BUS_SYSTEM, NULL);
 

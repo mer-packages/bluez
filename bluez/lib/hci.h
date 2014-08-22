@@ -2346,6 +2346,13 @@ struct hci_conn_info {
 	uint8_t	 out;
 	uint16_t state;
 	uint32_t link_mode;
+	
+	/*Add below member due to Qcomm linux kernel change*/
+	uint32_t    mtu;
+	uint32_t    cnt;
+	uint32_t    pkts;
+	uint8_t     pending_sec_level;
+	uint8_t     ssp_mode;
 };
 
 struct hci_dev_req {

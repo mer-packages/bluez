@@ -2788,34 +2788,10 @@ static void init_pending(int index)
 	hci_set_bit(PENDING_NAME, &dev->pending);
 }
 
-static struct dev_info *init_device(int index, gboolean already_up)
+static void raise_adapter(int dd, int index)
 {
-	struct dev_info *dev;
-	struct hci_dev_req dr;
-	int dd;
 	pid_t pid;
-
-	DBG("hci%d", index);
-
-	dd = hci_open_dev(index);
-	if (dd < 0) {
-		error("Unable to open hci%d: %s (%d)", index,
-						strerror(errno), errno);
-		return NULL;
-	}
-
-	if (index > max_dev) {
-		max_dev = index;
-		devs = g_realloc(devs, sizeof(devs[0]) * (max_dev + 1));
-	}
-
-	dev = init_dev_info(index, dd, FALSE, already_up);
-	init_pending(index);
-	start_hci_dev(index);
-
-	/* Avoid forking if nothing else has to be done */
-	if (already_up)
-		return dev;
+	struct hci_dev_req dr;
 
 	/* Do initialization in the separate process */
 	pid = fork();
@@ -2828,7 +2804,7 @@ static struct dev_info *init_device(int index, gboolean already_up)
 					index, strerror(errno), errno);
 		default:
 			DBG("child %d forked", pid);
-			return dev;
+			return;
 	}
 
 	memset(&dr, 0, sizeof(dr));
@@ -2853,6 +2829,55 @@ static struct dev_info *init_device(int index, gboolean already_up)
 fail:
 	hci_close_dev(dd);
 	exit(1);
+}
+
+static int hciops_adapter_up(int index)
+{
+	int dd;
+
+	DBG("hci%d", index);
+
+	dd = hci_open_dev(index);
+	if (dd < 0) {
+		error("Unable to open hci%d: %s (%d)", index,
+						strerror(errno), errno);
+		return -1;
+	}
+
+	raise_adapter(dd, index);
+	return 0;
+}
+
+static struct dev_info *init_device(int index, gboolean already_up)
+{
+	struct dev_info *dev;
+	int dd;
+
+	DBG("hci%d", index);
+
+	dd = hci_open_dev(index);
+	if (dd < 0) {
+		error("Unable to open hci%d: %s (%d)", index,
+						strerror(errno), errno);
+		return NULL;
+	}
+
+	if (index > max_dev) {
+		max_dev = index;
+		devs = g_realloc(devs, sizeof(devs[0]) * (max_dev + 1));
+	}
+
+	dev = init_dev_info(index, dd, FALSE, already_up);
+	init_pending(index);
+	start_hci_dev(index);
+
+	/* Avoid forking if nothing else has to be done */
+	if (already_up)
+		return dev;
+
+	raise_adapter(dd, index);
+
+	return dev;
 }
 
 static void init_conn_list(int index)
@@ -3925,6 +3950,7 @@ static struct btd_adapter_ops hci_ops = {
 	.remove_remote_oob_data = hciops_remove_remote_oob_data,
 	.confirm_name = hciops_confirm_name,
 	.load_ltks = hciops_load_ltks,
+	.adapter_up = hciops_adapter_up
 };
 
 static int hciops_init(void)

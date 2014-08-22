@@ -220,6 +220,8 @@ struct btd_adapter_ops {
 	int (*confirm_name) (int index, bdaddr_t *bdaddr, uint8_t bdaddr_type,
 							gboolean name_known);
 	int (*load_ltks) (int index, GSList *keys);
+
+	int (*adapter_up) (int index);
 };
 
 int btd_register_adapter_ops(struct btd_adapter_ops *ops, gboolean priority);
@@ -286,3 +288,5 @@ int btd_adapter_remove_remote_oob_data(struct btd_adapter *adapter,
 
 int btd_adapter_gatt_server_start(struct btd_adapter *adapter);
 void btd_adapter_gatt_server_stop(struct btd_adapter *adapter);
+
+int btd_adapter_up(int id);

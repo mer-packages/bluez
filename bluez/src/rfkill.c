@@ -129,8 +129,12 @@ static gboolean rfkill_event(GIOChannel *chan,
 		return TRUE;
 
 	adapter = manager_find_adapter_by_id(id);
-	if (!adapter)
+	if (!adapter) {
+		DBG("Adapter %d rfkilled since start, raising.", id);
+		if (btd_adapter_up(id) != 0)
+			DBG("Raising adapter %d failed.", id);
 		return TRUE;
+	}
 
 	DBG("RFKILL unblock for hci%d", id);
 

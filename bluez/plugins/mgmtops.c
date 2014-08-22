@@ -2471,6 +2471,11 @@ static int mgmtops_load_ltks(int index, GSList *keys)
 	return err;
 }
 
+static int mgmtops_adapter_up(int index)
+{
+	return -1; /* not implemented */
+}
+
 static struct btd_adapter_ops mgmt_ops = {
 	.setup = mgmt_setup,
 	.cleanup = mgmt_cleanup,
@@ -2507,6 +2512,7 @@ static struct btd_adapter_ops mgmt_ops = {
 	.remove_remote_oob_data = mgmt_remove_remote_oob_data,
 	.confirm_name = mgmt_confirm_name,
 	.load_ltks = mgmtops_load_ltks,
+	.adapter_up = mgmtops_adapter_up
 };
 
 static int mgmt_init(void)

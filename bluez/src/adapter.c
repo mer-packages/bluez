@@ -3578,3 +3578,8 @@ int btd_adapter_remove_remote_oob_data(struct btd_adapter *adapter,
 {
 	return adapter_ops->remove_remote_oob_data(adapter->dev_id, bdaddr);
 }
+
+int btd_adapter_up(int id)
+{
+	return adapter_ops->adapter_up(id);
+}

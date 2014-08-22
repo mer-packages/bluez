@@ -56,6 +56,13 @@ struct voice_call {
 
 	gboolean status_pending;
 	gboolean waiting_for_answer;
+	gchar *hold_dial_clir;
+	gchar *hold_dial_number;
+};
+
+struct dial {
+	gchar *hold_dial_clir;
+	gchar *hold_dial_number;
 };
 
 static DBusConnection *connection = NULL;
@@ -511,6 +518,7 @@ void telephony_answer_call_req(void *telephony_device)
 
 void telephony_dial_number_req(void *telephony_device, const char *number)
 {
+	struct voice_call *vc = NULL;
 	const char *clir;
 	int ret;
 
@@ -552,6 +560,22 @@ void telephony_dial_number_req(void *telephony_device, const char *number)
 		clir =  "disabled";
 	} else
 		clir = "default";
+
+	vc = find_vc_with_status(CALL_STATUS_ACTIVE);
+	if (vc != NULL && g_slist_length(calls) == 1) {
+		DBG("Explicitly holding current call before dialing");
+		g_free(vc->hold_dial_number);
+		vc->hold_dial_number = g_strdup(number);
+		g_free(vc->hold_dial_clir);
+		vc->hold_dial_clir = g_strdup(clir);
+		if (swap_calls() != 0)
+			telephony_dial_number_rsp(telephony_device,
+						CME_ERROR_AG_FAILURE);
+		else
+			telephony_dial_number_rsp(telephony_device,
+						CME_ERROR_NONE);
+		return;
+	}
 
 	ret = send_method_call(OFONO_BUS_NAME, modem_obj_path,
 			OFONO_VCMANAGER_INTERFACE,
@@ -863,6 +887,8 @@ static void call_free(void *data)
 	g_dbus_remove_watch(connection, vc->watch);
 	g_free(vc->obj_path);
 	g_free(vc->number);
+	g_free(vc->hold_dial_clir);
+	g_free(vc->hold_dial_number);
 	memset(vc, 0, sizeof(struct voice_call));
 	g_free(vc);
 }
@@ -910,6 +936,22 @@ static void update_call_status(void)
 					"call",
 					EV_CALL_INACTIVE);
 	}
+}
+
+static gboolean dial_after_hold(gpointer data)
+{
+	struct dial *d = (struct dial *)data;
+	send_method_call(OFONO_BUS_NAME, modem_obj_path,
+			OFONO_VCMANAGER_INTERFACE,
+			"Dial", NULL, NULL,
+			DBUS_TYPE_STRING, &d->hold_dial_number,
+			DBUS_TYPE_STRING, &d->hold_dial_clir,
+			DBUS_TYPE_INVALID);
+	g_free(d->hold_dial_clir);
+	g_free(d->hold_dial_number);
+	g_free(d);
+
+	return FALSE;
 }
 
 static gboolean handle_vc_property_changed(DBusConnection *conn,
@@ -969,6 +1011,16 @@ static gboolean handle_vc_property_changed(DBusConnection *conn,
 			vc->originating = FALSE;
 		} else if (g_str_equal(state, "held")) {
 			vc->status = CALL_STATUS_HELD;
+			/* in case we have pending dial, do it now */
+			if (vc->hold_dial_number != NULL) {
+				struct dial *d = NULL;
+				d = g_new0(struct dial, 1);
+				d->hold_dial_clir = vc->hold_dial_clir;
+				d->hold_dial_number = vc->hold_dial_number;
+				vc->hold_dial_clir = NULL;
+				vc->hold_dial_number = NULL;
+				g_timeout_add_seconds(1, dial_after_hold, d);
+			}
 		}
 		update_held_status();
 	} else if (g_str_equal(property, "Multiparty")) {

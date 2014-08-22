@@ -58,6 +58,7 @@ struct voice_call {
 static DBusConnection *connection = NULL;
 static char *modem_obj_path = NULL;
 static char *last_dialed_number = NULL;
+static gchar *last_dialed_number_path = NULL;
 static GSList *calls = NULL;
 static GSList *watches = NULL;
 static GSList *pending = NULL;
@@ -198,11 +199,34 @@ void telephony_last_dialed_number_req(void *telephony_device)
 {
 	DBG("telephony-ofono: last dialed number request");
 
-	if (last_dialed_number)
-		telephony_dial_number_req(telephony_device, last_dialed_number);
-	else
-		telephony_last_dialed_number_rsp(telephony_device,
-				CME_ERROR_NOT_ALLOWED);
+	/* If a path is given, prefer that to the number spied from
+	   ofono signals */
+	if (last_dialed_number_path != NULL) {
+		gchar *buf = NULL;
+		GError *err = NULL;
+
+		if (g_file_get_contents(last_dialed_number_path,
+						&buf, NULL, &err)) {
+			DBG("Dialing last dialed number '%s'", buf);
+			telephony_dial_number_req(telephony_device, buf);
+			g_free(buf);
+		} else {
+			DBG("Failed to read last dialed number from '%s': %s",
+				last_dialed_number_path, err->message);
+			telephony_last_dialed_number_rsp(telephony_device,
+							CME_ERROR_NOT_ALLOWED);
+			g_error_free(err);
+		}
+
+	} else {
+		if (last_dialed_number)
+			telephony_dial_number_req(telephony_device,
+						last_dialed_number);
+		else
+			telephony_last_dialed_number_rsp(telephony_device,
+							CME_ERROR_NOT_ALLOWED);
+	}
+
 }
 
 static int send_method_call(const char *dest, const char *path,
@@ -390,6 +414,22 @@ void telephony_dial_number_req(void *telephony_device, const char *number)
 	DBG("telephony-ofono: dial request to %s", number);
 
 	if (!modem_obj_path) {
+		telephony_dial_number_rsp(telephony_device,
+					CME_ERROR_AG_FAILURE);
+		return;
+	}
+
+	if(!number || *number == '\0') {
+		telephony_dial_number_rsp(telephony_device,
+					CME_ERROR_AG_FAILURE);
+		return;
+	}
+
+	/* Block memory dialing here; more proper would be to wait for
+	   ofono D-Bus reply, but I think that'd need audio device
+	   refcounting so that it doesn't potentially disappear while
+	   we wait for D-Bus reply. */
+	if (*number == '>') {
 		telephony_dial_number_rsp(telephony_device,
 					CME_ERROR_AG_FAILURE);
 		return;
@@ -1593,7 +1633,7 @@ static int statefs_batt_init(const char *path)
 }
 
 int telephony_init(uint32_t disabled_features, enum batt_info_source batt,
-		void *batt_param)
+		void *batt_param, gchar *last_number_path)
 {
 	uint32_t features = AG_FEATURE_EC_ANDOR_NR |
 				AG_FEATURE_INBAND_RINGTONE |
@@ -1654,6 +1694,9 @@ int telephony_init(uint32_t disabled_features, enum batt_info_source batt,
 	if (ret < 0)
 		return ret;
 
+	if (last_number_path)
+		last_dialed_number_path = g_strdup(last_number_path);
+
 	DBG("telephony_init() successfully");
 
 	telephony_ready_ind(features, ofono_indicators, BTRH_NOT_SUPPORTED,
@@ -1683,6 +1726,9 @@ void telephony_exit(void)
 
 	g_free(last_dialed_number);
 	last_dialed_number = NULL;
+
+	g_free(last_dialed_number_path);
+	last_dialed_number_path = NULL;
 
 	if (modem_obj_path)
 		modem_removed(modem_obj_path);

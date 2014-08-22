@@ -251,5 +251,5 @@ static inline int telephony_get_indicator(const struct indicator *indicators,
 }
 
 int telephony_init(uint32_t disabled_features, enum batt_info_source batt_info,
-		void *batt_info_param);
+		void *batt_info_param, gchar *last_number_path);
 void telephony_exit(void);

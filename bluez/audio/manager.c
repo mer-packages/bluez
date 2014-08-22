@@ -192,6 +192,21 @@ static enum batt_info_source telephony_battery_info_source(GKeyFile *config,
 	return batt;
 }
 
+static gchar* telephony_last_dialed_number_path(GKeyFile *config)
+{
+	GError *e = NULL;
+	char *s;
+
+	s = g_key_file_get_string(config, "Telephony", "LastDialedNumber", &e);
+	if (e) {
+		DBG("audio.conf: %s", e->message);
+		g_error_free(e);
+		return NULL;
+	}
+
+	return s;
+}
+
 static struct audio_adapter *find_adapter(GSList *list,
 					struct btd_adapter *btd_adapter)
 {
@@ -953,15 +968,17 @@ static void state_changed(struct btd_adapter *adapter, gboolean powered)
 		uint32_t disabled_features;
 		enum batt_info_source batt;
 		void *batt_param = NULL;
+		gchar *last_path = NULL;
 
 		/* telephony driver already initialized*/
 		if (telephony == TRUE)
 			return;
 		setup_telephony_ag_features(config, &disabled_features);
 		batt = telephony_battery_info_source(config, &batt_param);
-		telephony_init(disabled_features, batt, batt_param);
-		if (batt_param != NULL)
-			g_free(batt_param);
+		last_path = telephony_last_dialed_number_path(config);
+		telephony_init(disabled_features, batt, batt_param, last_path);
+		g_free(batt_param);
+		g_free(last_path);
 		telephony = TRUE;
 		return;
 	}

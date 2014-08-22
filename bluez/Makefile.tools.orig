@@ -162,7 +162,7 @@ sbin_PROGRAMS += test/hciemu
 
 bin_PROGRAMS += test/l2test test/rctest
 
-bin_PROGRAMS += test/gaptest test/sdptest test/scotest \
+noinst_PROGRAMS += test/gaptest test/sdptest test/scotest \
 			test/attest test/hstest test/avtest test/ipctest \
 					test/lmptest test/bdaddr test/agent \
 					test/btiotest test/test-textfile \

@@ -702,6 +702,7 @@ static int hciops_set_name(int index, const char *name)
 		return -errno;
 
 	memcpy(dev->name, cp.name, 248);
+	dev->name[248] = '\0';
 	update_ext_inquiry_response(index);
 
 	return 0;
@@ -1649,9 +1650,10 @@ static void read_local_name_complete(int index, read_local_name_rp *rp)
 		return;
 
 	memcpy(dev->name, rp->name, 248);
+	dev->name[248] = '\0';
 
 	if (!dev->pending) {
-		update_name(index, (char *) rp->name);
+		update_name(index, dev->name);
 		return;
 	}
 

@@ -178,6 +178,32 @@ static uint32_t company_ids[] = {
 	IEEEID_BTSIG,
 };
 
+#define DEFAULT_PROTOCOL_VERSION 0
+
+struct avrcp_ct_config {
+	gboolean enabled;
+	uint16_t avrcp_ver;
+	uint16_t disabled_features;
+};
+
+struct avrcp_tg_config {
+	gboolean enabled;
+	uint16_t avrcp_ver;
+	uint16_t disabled_features;
+};
+
+struct avrcp_ct_config avrcp_ct_config = {
+	TRUE,
+	DEFAULT_PROTOCOL_VERSION,
+	0
+};
+
+struct avrcp_tg_config avrcp_tg_config = {
+	TRUE,
+	DEFAULT_PROTOCOL_VERSION,
+	0
+};
+
 static void register_volume_notification(struct avrcp_player *player);
 
 static sdp_record_t *avrcp_ct_record(void)
@@ -194,6 +220,10 @@ static sdp_record_t *avrcp_ct_record(void)
 						AVRCP_FEATURE_CATEGORY_2 |
 						AVRCP_FEATURE_CATEGORY_3 |
 						AVRCP_FEATURE_CATEGORY_4 );
+
+	if (avrcp_ct_config.avrcp_ver != DEFAULT_PROTOCOL_VERSION)
+		avrcp_ver = avrcp_ct_config.avrcp_ver;
+	feat &= ~avrcp_ct_config.disabled_features;
 
 	record = sdp_record_alloc();
 	if (!record)
@@ -263,6 +293,10 @@ static sdp_record_t *avrcp_tg_record(void)
 					AVRCP_FEATURE_CATEGORY_3 |
 					AVRCP_FEATURE_CATEGORY_4 |
 					AVRCP_FEATURE_PLAYER_SETTINGS );
+
+	if (avrcp_tg_config.avrcp_ver != DEFAULT_PROTOCOL_VERSION)
+		avrcp_ver = avrcp_tg_config.avrcp_ver;
+	feat &= ~avrcp_tg_config.disabled_features;
 
 	record = sdp_record_alloc();
 	if (!record)
@@ -1214,7 +1248,6 @@ static void state_changed(struct audio_device *dev, avctp_state_t old_state,
 			avctp_unregister_pdu_handler(player->handler);
 			player->handler = 0;
 		}
-
 		break;
 	case AVCTP_STATE_CONNECTING:
 		player->session = avctp_connect(&dev->src, &dev->dst);
@@ -1267,6 +1300,108 @@ void avrcp_disconnect(struct audio_device *dev)
 	avctp_disconnect(session);
 }
 
+static void setup_avrcp_tg_config(GKeyFile *config,
+				gboolean *enabled,
+				uint16_t *version,
+				uint16_t *disabled_features)
+{
+	GError *err = NULL;
+	gboolean b;
+	char **list;
+	char *s;
+	int i;
+
+	if (!config)
+		return;
+
+	b = g_key_file_get_boolean(config, "AVRCP", "EnableTarget", &err);
+	if (err) {
+		DBG("audio.conf: %s", err->message);
+		g_error_free(err);
+		err = NULL;
+	} else
+		*enabled = b;
+
+	s = g_key_file_get_string(config, "AVRCP", "TargetVersion", &err);
+	if (err) {
+		DBG("audio.conf: %s", err->message);
+		g_error_free(err);
+		err = NULL;
+	} else {
+		*version = strtol(s, NULL, 16);
+		g_free(s);
+	}
+
+	list = g_key_file_get_string_list(config,
+					"AVRCP", "DisableTargetFeatures",
+					NULL, NULL);
+	
+	*disabled_features = 0;
+	for (i = 0; list && list[i] != NULL; i++) {
+		if (g_str_equal(list[i], "Category1"))
+			*disabled_features |= AVRCP_FEATURE_CATEGORY_1;
+		else if (g_str_equal(list[i], "Category2"))
+			*disabled_features |= AVRCP_FEATURE_CATEGORY_2;
+		else if (g_str_equal(list[i], "Category3"))
+			*disabled_features |= AVRCP_FEATURE_CATEGORY_3;
+		else if (g_str_equal(list[i], "Category4"))
+			*disabled_features |= AVRCP_FEATURE_CATEGORY_4;
+		else if (g_str_equal(list[i], "PlayerSettings"))
+			*disabled_features |= AVRCP_FEATURE_PLAYER_SETTINGS;
+	}
+	g_strfreev(list);
+}
+
+static void setup_avrcp_ct_config(GKeyFile *config,
+				gboolean *enabled,
+				uint16_t *version,
+				uint16_t *disabled_features)
+{
+	GError *err = NULL;
+	gboolean b;
+	char **list;
+	char *s;
+	int i;
+
+	if (!config)
+		return;
+
+	b = g_key_file_get_boolean(config, "AVRCP", "EnableControl", &err);
+	if (err) {
+		DBG("audio.conf: %s", err->message);
+		g_error_free(err);
+		err = NULL;
+	} else
+		*enabled = b;
+
+	s = g_key_file_get_string(config, "AVRCP", "ControlVersion", &err);
+	if (err) {
+		DBG("audio.conf: %s", err->message);
+		g_error_free(err);
+		err = NULL;
+	} else {
+		*version = strtol(s, NULL, 16);
+		g_free(s);
+	}
+
+	list = g_key_file_get_string_list(config,
+					"AVRCP", "DisableControlFeatures",
+					NULL, NULL);
+	
+	*disabled_features = 0;
+	for (i = 0; list && list[i] != NULL; i++) {
+		if (g_str_equal(list[i], "Category1"))
+			*disabled_features |= AVRCP_FEATURE_CATEGORY_1;
+		else if (g_str_equal(list[i], "Category2"))
+			*disabled_features |= AVRCP_FEATURE_CATEGORY_2;
+		else if (g_str_equal(list[i], "Category3"))
+			*disabled_features |= AVRCP_FEATURE_CATEGORY_3;
+		else if (g_str_equal(list[i], "Category4"))
+			*disabled_features |= AVRCP_FEATURE_CATEGORY_4;
+	}
+	g_strfreev(list);
+}
+
 int avrcp_register(DBusConnection *conn, const bdaddr_t *src, GKeyFile *config)
 {
 	sdp_record_t *record;
@@ -1282,47 +1417,61 @@ int avrcp_register(DBusConnection *conn, const bdaddr_t *src, GKeyFile *config)
 			g_error_free(err);
 		} else
 			master = tmp;
+
+		setup_avrcp_tg_config(config,
+				&avrcp_tg_config.enabled,
+				&avrcp_tg_config.avrcp_ver,
+				&avrcp_tg_config.disabled_features);
+
+		setup_avrcp_ct_config(config,
+				&avrcp_ct_config.enabled,
+				&avrcp_ct_config.avrcp_ver,
+				&avrcp_ct_config.disabled_features);
 	}
 
 	server = g_new0(struct avrcp_server, 1);
 	if (!server)
 		return -ENOMEM;
 
-	record = avrcp_tg_record();
-	if (!record) {
-		error("Unable to allocate new service record");
-		g_free(server);
-		return -1;
+	if (avrcp_tg_config.enabled) {
+
+		record = avrcp_tg_record();
+		if (!record) {
+			error("Unable to allocate new service record");
+			goto fail;
+		}
+
+		if (add_record_to_server(src, record) < 0) {
+			error("Unable to register AVRCP target service record");
+			sdp_record_free(record);
+			goto fail;
+		}
+		server->tg_record_id = record->handle;
 	}
 
-	if (add_record_to_server(src, record) < 0) {
-		error("Unable to register AVRCP target service record");
-		g_free(server);
-		sdp_record_free(record);
-		return -1;
-	}
-	server->tg_record_id = record->handle;
+	if (avrcp_ct_config.enabled) {
 
-	record = avrcp_ct_record();
-	if (!record) {
-		error("Unable to allocate new service record");
-		g_free(server);
-		return -1;
-	}
+		record = avrcp_ct_record();
+		if (!record) {
+			error("Unable to allocate new service record");
+			goto fail;
+		}
 
-	if (add_record_to_server(src, record) < 0) {
-		error("Unable to register AVRCP service record");
-		sdp_record_free(record);
-		g_free(server);
-		return -1;
+		if (add_record_to_server(src, record) < 0) {
+			error("Unable to register AVRCP service record");
+			sdp_record_free(record);
+			goto fail;
+		}
+		server->ct_record_id = record->handle;
+
 	}
-	server->ct_record_id = record->handle;
 
 	if (avctp_register(src, master) < 0) {
-		remove_record_from_server(server->ct_record_id);
-		remove_record_from_server(server->tg_record_id);
-		g_free(server);
-		return -1;
+		if (avrcp_ct_config.enabled)
+			remove_record_from_server(server->ct_record_id);
+		if (avrcp_tg_config.enabled)
+			remove_record_from_server(server->tg_record_id);
+		goto fail;
 	}
 
 	bacpy(&server->src, src);
@@ -1330,6 +1479,10 @@ int avrcp_register(DBusConnection *conn, const bdaddr_t *src, GKeyFile *config)
 	servers = g_slist_append(servers, server);
 
 	return 0;
+
+fail:
+	g_free(server);
+	return -1;
 }
 
 static void player_destroy(gpointer data)
@@ -1381,6 +1534,10 @@ struct avrcp_player *avrcp_register_player(const bdaddr_t *src,
 {
 	struct avrcp_server *server;
 	struct avrcp_player *player;
+
+	/* Don't accept player if using an old version of the protocol */
+	if (avrcp_tg_config.avrcp_ver < 0x0103)
+		return NULL;
 
 	server = find_server(servers, src);
 	if (!server)

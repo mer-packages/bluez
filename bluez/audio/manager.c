@@ -1560,3 +1560,28 @@ void manager_set_fast_connectable(gboolean enable)
 				adapter_get_dev_id(adapter->btd_adapter));
 	}
 }
+
+void manager_update_hfp_ag_record(uint32_t feat)
+{
+	GSList *l;
+
+	for (l = adapters; l; l = l->next) {
+		uint16_t sdpfeat;
+		sdp_data_t *features = NULL;
+		sdp_record_t *record = NULL;
+		struct audio_adapter *adapter = l->data;
+
+		if (!adapter->hfp_ag_record_id) {
+			continue;
+		}
+
+		record = sdp_record_find(adapter->hfp_ag_record_id);
+		if (record == NULL) {
+			continue;
+		}
+
+		sdpfeat = (uint16_t) feat & 0x1F;
+		features = sdp_data_alloc(SDP_UINT16, &sdpfeat);
+		sdp_attr_replace(record, SDP_ATTR_SUPPORTED_FEATURES, features);
+	}
+}

@@ -2910,6 +2910,8 @@ int telephony_ready_ind(uint32_t features,
 
 	print_ag_features(ag.features);
 
+	manager_update_hfp_ag_record(ag.features);
+
 	return 0;
 }
 

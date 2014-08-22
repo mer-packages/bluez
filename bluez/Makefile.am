@@ -418,6 +418,29 @@ CLEANFILES += $(rules_DATA)
 
 EXTRA_DIST += scripts/bluetooth-hid2hci.rules scripts/bluetooth-serial.rules
 
+test_scripts = test/hsplay \
+	test/hsmicro \
+	test/list-devices \
+	test/monitor-bluetooth \
+	test/simple-agent \
+	test/simple-service \
+	test/test-adapter \
+	test/test-audio \
+	test/test-device \
+	test/test-discovery \
+	test/test-input \
+	test/test-manager \
+	test/test-network \
+	test/test-serial \
+	test/test-service \
+	test/test-telephony
+
+
+if TEST
+testdir = ${pkglibdir}/test
+test_SCRIPTS = ${test_scripts}
+endif
+
 EXTRA_DIST += doc/manager-api.txt \
 		doc/adapter-api.txt doc/device-api.txt \
 		doc/service-api.txt doc/agent-api.txt doc/attribute-api.txt \

@@ -42,6 +42,10 @@ static DBusHandlerResult message_filter(DBusConnection *connection,
 
 static guint listener_id = 0;
 static GSList *listeners = NULL;
+/*Add this flag to avoid call dbus_connection_remove_filter() twice*/
+static gboolean msg_filter_need_free = FALSE;
+
+
 
 struct service_data {
 	DBusConnection *conn;
@@ -205,9 +209,11 @@ static struct filter_data *filter_data_get(DBusConnection *connection,
 	const char *name = NULL, *owner = NULL;
 
 	if (filter_data_find(connection, NULL, NULL, NULL, NULL, NULL, NULL) == NULL) {
+		msg_filter_need_free = TRUE;
 		if (!dbus_connection_add_filter(connection,
 					message_filter, NULL, NULL)) {
 			error("dbus_connection_add_filter() failed");
+			msg_filter_need_free = FALSE;
 			return NULL;
 		}
 	}
@@ -381,10 +387,11 @@ static gboolean filter_data_remove_callback(struct filter_data *data,
 	/* Remove filter if there are no listeners left for the connection */
 	data = filter_data_find(connection, NULL, NULL, NULL, NULL, NULL,
 					NULL);
-	if (data == NULL)
+	if ((data == NULL) && msg_filter_need_free) {
+		msg_filter_need_free = FALSE;
 		dbus_connection_remove_filter(connection, message_filter,
 						NULL);
-
+	}
 	dbus_connection_unref(connection);
 
 	return TRUE;

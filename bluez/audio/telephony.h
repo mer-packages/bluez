@@ -141,6 +141,16 @@ struct indicator {
 	gboolean ignore_redundant;
 };
 
+/* Where to retrieve battery charge information */
+enum batt_info_source {
+	BATT_INFO_DEFAULT, /* default choice for implementation */
+	BATT_INFO_HAL,
+	BATT_INFO_STATEFS
+};
+
+#define BATT_INFO_STATEFS_DEFAULT_PATH \
+	"/run/state/providers/upower/Battery/ChargePercentage"
+
 /* Notify telephony-*.c of connected/disconnected devices. Implemented by
  * telephony-*.c
  */
@@ -240,5 +250,6 @@ static inline int telephony_get_indicator(const struct indicator *indicators,
 	return -ENOENT;
 }
 
-int telephony_init(uint32_t disabled_features);
+int telephony_init(uint32_t disabled_features, enum batt_info_source batt_info,
+		void *batt_info_param);
 void telephony_exit(void);

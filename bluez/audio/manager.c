@@ -156,6 +156,42 @@ static void setup_telephony_ag_features(GKeyFile *config,
 	g_strfreev(list);
 }
 
+static enum batt_info_source telephony_battery_info_source(GKeyFile *config,
+							void **param)
+{
+	enum batt_info_source batt = BATT_INFO_DEFAULT;
+	GError *err = NULL;
+	char *s;
+
+	s = g_key_file_get_string(config, "Telephony", "BatteryInfo", &err);
+	if (err) {
+		DBG("audio.conf: %s", err->message);
+		g_error_free(err);
+	} else {
+		if (strcmp(s, "Hal") == 0) {
+			batt = BATT_INFO_HAL;
+			*param = NULL;
+		} else if (strcmp(s, "Statefs") == 0) {
+			char *p;
+			batt = BATT_INFO_STATEFS;
+			p = g_key_file_get_string(config, "Telephony",
+						"BatteryInfoPath", &err);
+			if (err) {
+				DBG("audio.conf: %s", err->message);
+				g_error_free(err);
+				*param = g_strdup(BATT_INFO_STATEFS_DEFAULT_PATH);
+			} else {
+				*param = p;
+			}
+		} else {
+			DBG("audio.conf: ignoring unknown BatteryInfo '%s'", s);
+		}
+		g_free(s);
+	}
+
+	return batt;
+}
+
 static struct audio_adapter *find_adapter(GSList *list,
 					struct btd_adapter *btd_adapter)
 {
@@ -915,11 +951,17 @@ static void state_changed(struct btd_adapter *adapter, gboolean powered)
 
 	if (powered) {
 		uint32_t disabled_features;
+		enum batt_info_source batt;
+		void *batt_param = NULL;
+
 		/* telephony driver already initialized*/
 		if (telephony == TRUE)
 			return;
 		setup_telephony_ag_features(config, &disabled_features);
-		telephony_init(disabled_features);
+		batt = telephony_battery_info_source(config, &batt_param);
+		telephony_init(disabled_features, batt, batt_param);
+		if (batt_param != NULL)
+			g_free(batt_param);
 		telephony = TRUE;
 		return;
 	}

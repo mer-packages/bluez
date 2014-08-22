@@ -409,7 +409,8 @@ static const GDBusSignalTable dummy_signals[] = {
 	{ }
 };
 
-int telephony_init(uint32_t disabled_features)
+int telephony_init(uint32_t disabled_features, enum batt_info_source batt,
+		void *batt_param)
 {
 	uint32_t features = AG_FEATURE_REJECT_A_CALL |
 				AG_FEATURE_ENHANCED_CALL_STATUS |
@@ -418,6 +419,9 @@ int telephony_init(uint32_t disabled_features)
 	DBG("");
 
 	features &= ~disabled_features;
+
+	if (batt != BATT_INFO_DEFAULT)
+		DBG("Ignoring non-default battery info source. ");
 
 	connection = dbus_bus_get(DBUS_BUS_SYSTEM, NULL);
 

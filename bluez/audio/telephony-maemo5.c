@@ -2029,7 +2029,8 @@ static DBusHandlerResult signal_filter(DBusConnection *conn,
 	return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
 }
 
-int telephony_init(uint32_t disabled_features)
+int telephony_init(uint32_t disabled_features, enum batt_info_source batt,
+		void *batt_param)
 {
 	const char *battery_cap = "battery";
 	uint32_t features = AG_FEATURE_EC_ANDOR_NR |
@@ -2041,6 +2042,9 @@ int telephony_init(uint32_t disabled_features)
 				AG_FEATURE_THREE_WAY_CALLING;
 
 	features &= ~disabled_features;
+
+	if (batt != BATT_INFO_DEFAULT)
+		DBG("Ignoring non-default battery info source. ");
 
 	connection = dbus_bus_get(DBUS_BUS_SYSTEM, NULL);
 

@@ -90,6 +90,9 @@ static char *subscriber_number = NULL;
 
 static gboolean events_enabled = FALSE;
 
+static char *statefs_batt_path = NULL;
+static guint statefs_batt_watch = 0;
+
 static struct indicator ofono_indicators[] =
 {
 	{ "battchg",	"0-5",	5,	TRUE },
@@ -1343,6 +1346,40 @@ static gboolean handle_manager_modem_removed(DBusConnection *conn,
 	return TRUE;
 }
 
+static gboolean statefs_batt_update(gpointer data)
+{
+	gboolean ret = FALSE;
+	gchar *buf = NULL;
+	gchar *endp = NULL;
+	gsize len = 0;
+	GError *err = NULL;
+	guint64 val;
+
+	if (statefs_batt_path == NULL)
+		goto done;
+
+	DBG("Reading battery charge from '%s'.", statefs_batt_path);
+	if (g_file_get_contents(statefs_batt_path, &buf, &len, &err) == FALSE) {
+		DBG("Failed to read battery charge: %s", err->message);
+		goto done;
+	}
+
+	val = g_ascii_strtoull(buf, &endp, 10);
+	if (endp == NULL || *endp != '\0') {
+		DBG("Cannot process battery charge string '%s'", buf);
+		goto done;
+	}
+
+	DBG("Battery charge changed to %llu", val);
+	val = 5*val/100;
+	telephony_update_indicator(ofono_indicators, "battchg", val);
+	ret = TRUE;
+
+done:
+	g_free(buf);
+	return ret;
+}
+
 static void hal_battery_level_reply(DBusPendingCall *call, void *user_data)
 {
 	DBusMessage *reply;
@@ -1544,7 +1581,19 @@ static void handle_service_disconnect(DBusConnection *conn, void *user_data)
 		modem_removed(modem_obj_path);
 }
 
-int telephony_init(uint32_t disabled_features)
+static int statefs_batt_init(const char *path)
+{
+	statefs_batt_path = g_strdup(path);
+	statefs_batt_watch =
+		g_timeout_add_seconds(60, statefs_batt_update, NULL);
+	statefs_batt_update(NULL);
+
+	DBG("Statefs battery info source set up. ");
+	return 0;
+}
+
+int telephony_init(uint32_t disabled_features, enum batt_info_source batt,
+		void *batt_param)
 {
 	uint32_t features = AG_FEATURE_EC_ANDOR_NR |
 				AG_FEATURE_INBAND_RINGTONE |
@@ -1583,13 +1632,25 @@ int telephony_init(uint32_t disabled_features)
 
 	watches = g_slist_prepend(watches, GUINT_TO_POINTER(watch));
 
-	ret = send_method_call("org.freedesktop.Hal",
+	switch (batt) {
+
+	case BATT_INFO_STATEFS:
+		ret = statefs_batt_init(batt_param);
+		break;
+
+	case BATT_INFO_HAL:
+	default:
+		ret = send_method_call("org.freedesktop.Hal",
 				"/org/freedesktop/Hal/Manager",
 				"org.freedesktop.Hal.Manager",
 				"FindDeviceByCapability",
 				hal_find_device_reply, NULL,
 				DBUS_TYPE_STRING, &battery_cap,
 				DBUS_TYPE_INVALID);
+		break;
+
+	}
+
 	if (ret < 0)
 		return ret;
 
@@ -1634,6 +1695,16 @@ void telephony_exit(void)
 
 	dbus_connection_unref(connection);
 	connection = NULL;
+
+	if (statefs_batt_watch != 0) {
+		g_source_remove(statefs_batt_watch);
+		statefs_batt_watch = 0;
+	}
+
+	if (statefs_batt_path != NULL) {
+		g_free(statefs_batt_path);
+		statefs_batt_path = NULL;
+	}
 
 	telephony_deinit();
 }

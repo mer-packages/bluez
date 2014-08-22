@@ -325,7 +325,7 @@ CLEANFILES += $(builtin_files)
 man_MANS = src/bluetoothd.8
 
 if DATAFILES
-conf_DATA += src/main.conf audio/audio.conf
+conf_DATA += src/main.conf
 endif
 
 EXTRA_DIST += src/genbuiltin src/bluetooth.conf src/org.bluez.service \

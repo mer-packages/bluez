@@ -54,7 +54,7 @@ struct voice_call {
 	char *number;
 	guint watch;
 
-	gboolean hold_status_pending;
+	gboolean status_pending;
 	gboolean waiting_for_answer;
 };
 
@@ -111,6 +111,8 @@ static struct indicator ofono_indicators[] =
 	{ NULL }
 };
 
+static void update_call_status(void);
+
 static void waiting_for_answer_clear(struct voice_call *vc)
 {
 	DBG("");
@@ -129,28 +131,28 @@ static gboolean waiting_for_answer_is_set(struct voice_call *vc)
 	return vc->waiting_for_answer;
 }
 
-static void hold_status_clear(struct voice_call *vc)
+static void status_clear(struct voice_call *vc)
 {
-	vc->hold_status_pending = FALSE;
+	vc->status_pending = FALSE;
 }
 
-static void hold_status_set_all(void)
+static void status_set_all(void)
 {
 	GSList *l;
 
 	for (l = calls; l != NULL; l = l->next) {
 		struct voice_call *vc = l->data;
-		vc->hold_status_pending = TRUE;
+		vc->status_pending = TRUE;
 	}
 }
 
-static gboolean hold_status_pending(void)
+static gboolean status_pending(void)
 {
 	GSList *l;
 
 	for (l = calls; l != NULL; l = l->next) {
 		struct voice_call *vc = l->data;
-		if (vc->hold_status_pending == TRUE)
+		if (vc->status_pending == TRUE)
 			return TRUE;
 	}
 
@@ -769,8 +771,8 @@ void telephony_call_hold_req(void *telephony_device, const char *cmd)
 	}
 
 done:
-	if (cme_err == CME_ERROR_NONE) /* wait for all hold statuses now */
-		hold_status_set_all();
+	if (cme_err == CME_ERROR_NONE) /* wait for all call statuses now */
+		status_set_all();
 
 	telephony_call_hold_rsp(telephony_device, cme_err);
 }
@@ -850,10 +852,8 @@ static void call_free(void *data)
 
 	DBG("%s", vc->obj_path);
 
-	if (vc->status == CALL_STATUS_ACTIVE)
-		telephony_update_indicator(ofono_indicators, "call",
-							EV_CALL_INACTIVE);
-	else
+	update_call_status();
+	if (vc->status != CALL_STATUS_ACTIVE)
 		telephony_update_indicator(ofono_indicators, "callsetup",
 							EV_CALLSETUP_INACTIVE);
 
@@ -871,8 +871,8 @@ static void update_held_status(void)
 {
 	DBG("");
 
-	if (hold_status_pending()) {
-		DBG("Hold statuses pending. ");
+	if (status_pending()) {
+		DBG("Call statuses pending. ");
 		return;
 	}
 
@@ -889,6 +889,26 @@ static void update_held_status(void)
 		telephony_update_indicator(ofono_indicators,
 					"callheld",
 					EV_CALLHELD_NONE);
+	}
+}
+
+static void update_call_status(void)
+{
+	DBG("");
+
+	if (status_pending()) {
+		DBG("Call statuses pending. ");
+		return;
+	}
+
+	if (find_vc_with_status(CALL_STATUS_ACTIVE)) {
+		telephony_update_indicator(ofono_indicators,
+					"call",
+					EV_CALL_ACTIVE);
+	} else {
+		telephony_update_indicator(ofono_indicators,
+					"call",
+					EV_CALL_INACTIVE);
 	}
 }
 
@@ -917,7 +937,7 @@ static gboolean handle_vc_property_changed(DBusConnection *conn,
 	if (g_str_equal(property, "State")) {
 		dbus_message_iter_get_basic(&sub, &state);
 		DBG("State %s", state);
-		hold_status_clear(vc);
+		status_clear(vc);
 		if (g_str_equal(state, "disconnected")) {
 			calls = g_slist_remove(calls, vc);
 			call_free(vc);
@@ -925,14 +945,13 @@ static gboolean handle_vc_property_changed(DBusConnection *conn,
 			   of release and answer (AT+CHLD=1) processing */
 			answer_waiting_call();
 		} else if (g_str_equal(state, "active")) {
-			telephony_update_indicator(ofono_indicators,
-							"call", EV_CALL_ACTIVE);
-			telephony_update_indicator(ofono_indicators,
-							"callsetup",
-							EV_CALLSETUP_INACTIVE);
 			if (vc->status == CALL_STATUS_INCOMING)
 				telephony_calling_stopped_ind();
 			vc->status = CALL_STATUS_ACTIVE;
+			update_call_status();
+			telephony_update_indicator(ofono_indicators,
+							"callsetup",
+							EV_CALLSETUP_INACTIVE);
 		} else if (g_str_equal(state, "alerting")) {
 			telephony_update_indicator(ofono_indicators,
 					"callsetup", EV_CALLSETUP_ALERTING);

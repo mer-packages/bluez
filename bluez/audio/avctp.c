@@ -68,6 +68,8 @@
 #define AVCTP_PACKET_CONTINUE	2
 #define AVCTP_PACKET_END	3
 
+#define MAX_CONN_RETRIES 4
+
 #if __BYTE_ORDER == __LITTLE_ENDIAN
 
 struct avctp_header {
@@ -143,6 +145,9 @@ struct avctp {
 
 	uint8_t key_quirks[256];
 	GSList *handlers;
+
+	guint retries;
+	gboolean incoming_dropped;
 };
 
 struct avctp_pdu_handler {
@@ -620,6 +625,33 @@ static void avctp_connect_cb(GIOChannel *chan, GError *err, gpointer data)
 	GError *gerr = NULL;
 
 	if (err) {
+		if (session->incoming_dropped &&
+			session->retries < MAX_CONN_RETRIES) {
+			/* Simultaneous connection attempts failed on
+			   both sides; cleanup and retry with the same
+			   callback. */
+			GError *retry_err = NULL;
+			GIOChannel *io = NULL;
+
+			g_io_channel_shutdown(session->io, TRUE, NULL);
+			g_io_channel_unref(session->io);
+			session->io = NULL;
+			session->incoming_dropped = FALSE;
+			session->retries++;
+
+			io = bt_io_connect(BT_IO_L2CAP, avctp_connect_cb,
+					session, NULL, NULL,
+					BT_IO_OPT_SOURCE_BDADDR,
+					&session->server->src,
+					BT_IO_OPT_DEST_BDADDR, &session->dst,
+					BT_IO_OPT_PSM, AVCTP_PSM,
+					BT_IO_OPT_INVALID);
+			if (io != NULL) {
+				session->io = io;
+				return;
+			}
+		}
+
 		avctp_set_state(session, AVCTP_STATE_DISCONNECTED);
 		error("%s", err->message);
 		return;
@@ -773,7 +805,9 @@ static void avctp_confirm_cb(GIOChannel *chan, gpointer data)
 
 	if (session->io) {
 		error("Refusing unexpected connect from %s", address);
-		goto drop;
+		session->incoming_dropped = TRUE;
+		g_io_channel_shutdown(chan, TRUE, NULL);
+		return;
 	}
 
 	avctp_set_state(session, AVCTP_STATE_CONNECTING);

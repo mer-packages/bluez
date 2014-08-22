@@ -409,8 +409,9 @@ static const GDBusSignalTable dummy_signals[] = {
 	{ }
 };
 
-int telephony_init(uint32_t disabled_features, enum batt_info_source batt,
-		void *batt_param, gchar *last_number_path)
+int telephony_init(uint32_t disabled_features, uint32_t disabled_supp_features,
+		enum batt_info_source batt, void *batt_param,
+		gchar *last_number_path)
 {
 	uint32_t features = AG_FEATURE_REJECT_A_CALL |
 				AG_FEATURE_ENHANCED_CALL_STATUS |

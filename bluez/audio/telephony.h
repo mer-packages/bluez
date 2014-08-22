@@ -52,6 +52,9 @@
 #define HF_FEATURE_ENHANCED_CALL_STATUS		0x0020
 #define HF_FEATURE_ENHANCED_CALL_CONTROL	0x0040
 
+/* Supplementary feature definitions for finer control */
+#define AG_FEATURE_SUPP_CONF_CALL		0x0001
+
 /* Indicator event values */
 #define EV_SERVICE_NONE			0
 #define EV_SERVICE_PRESENT		1
@@ -250,6 +253,7 @@ static inline int telephony_get_indicator(const struct indicator *indicators,
 	return -ENOENT;
 }
 
-int telephony_init(uint32_t disabled_features, enum batt_info_source batt_info,
-		void *batt_info_param, gchar *last_number_path);
+int telephony_init(uint32_t disabled_features, uint32_t disabled_supp_features,
+		enum batt_info_source batt_info, void *batt_info_param,
+		gchar *last_number_path);
 void telephony_exit(void);

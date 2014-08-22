@@ -86,13 +86,15 @@ static struct {
 	.operator_name = NULL,
 };
 
-static const char *chld_str = "0,1,1x,2,2x,3,4";
 static char *subscriber_number = NULL;
 
 static gboolean events_enabled = FALSE;
 
 static char *statefs_batt_path = NULL;
 static guint statefs_batt_watch = 0;
+
+static uint32_t telephony_features = 0;
+static uint32_t telephony_supp_features = 0;
 
 static struct indicator ofono_indicators[] =
 {
@@ -275,6 +277,7 @@ static int send_method_call(const char *dest, const char *path,
 static int answer_call(struct voice_call *vc)
 {
 	DBG("%s", vc->number);
+	DBG("%s", vc->obj_path);
 	return send_method_call(OFONO_BUS_NAME, vc->obj_path,
 						OFONO_VC_INTERFACE, "Answer",
 						NULL, NULL, DBUS_TYPE_INVALID);
@@ -283,6 +286,7 @@ static int answer_call(struct voice_call *vc)
 static int release_call(struct voice_call *vc)
 {
 	DBG("%s", vc->number);
+	DBG("%s", vc->obj_path);
 	return send_method_call(OFONO_BUS_NAME, vc->obj_path,
 						OFONO_VC_INTERFACE, "Hangup",
 						NULL, NULL, DBUS_TYPE_INVALID);
@@ -290,7 +294,7 @@ static int release_call(struct voice_call *vc)
 
 static int release_answer_calls(void)
 {
-	DBG("");
+	DBG("%s", modem_obj_path);
 	return send_method_call(OFONO_BUS_NAME, modem_obj_path,
 						OFONO_VCMANAGER_INTERFACE,
 						"ReleaseAndAnswer",
@@ -299,20 +303,22 @@ static int release_answer_calls(void)
 
 static int split_call(struct voice_call *call)
 {
+	DBG("%s", modem_obj_path);
 	DBG("%s", call->number);
+	DBG("%s", call->obj_path);
 	return send_method_call(OFONO_BUS_NAME, modem_obj_path,
 						OFONO_VCMANAGER_INTERFACE,
 						"PrivateChat",
 						NULL, NULL,
 						DBUS_TYPE_OBJECT_PATH,
-						call->obj_path,
+						&call->obj_path,
 						DBUS_TYPE_INVALID);
 	return -1;
 }
 
 static int swap_calls(void)
 {
-	DBG("");
+	DBG("%s", modem_obj_path);
 	return send_method_call(OFONO_BUS_NAME, modem_obj_path,
 						OFONO_VCMANAGER_INTERFACE,
 						"SwapCalls",
@@ -321,7 +327,7 @@ static int swap_calls(void)
 
 static int create_conference(void)
 {
-	DBG("");
+	DBG("%s", modem_obj_path);
 	return send_method_call(OFONO_BUS_NAME, modem_obj_path,
 						OFONO_VCMANAGER_INTERFACE,
 						"CreateMultiparty",
@@ -330,7 +336,7 @@ static int create_conference(void)
 
 static int release_conference(void)
 {
-	DBG("");
+	DBG("%s", modem_obj_path);
 	return send_method_call(OFONO_BUS_NAME, modem_obj_path,
 						OFONO_VCMANAGER_INTERFACE,
 						"HangupMultiparty",
@@ -339,7 +345,7 @@ static int release_conference(void)
 
 static int call_transfer(void)
 {
-	DBG("");
+	DBG("%s", modem_obj_path);
 	return send_method_call(OFONO_BUS_NAME, modem_obj_path,
 						OFONO_VCMANAGER_INTERFACE,
 						"Transfer",
@@ -549,20 +555,44 @@ static void foreach_vc_with_status(int status,
 
 void telephony_call_hold_req(void *telephony_device, const char *cmd)
 {
-	const char *idx;
-	struct voice_call *call;
-	int err = 0;
+	const char *idx = NULL;
+	struct voice_call *call = NULL;
+	cme_error_t cme_err = CME_ERROR_NONE;
 
 	DBG("telephony-ofono: got call hold request %s", cmd);
 
-	if (strlen(cmd) > 1)
-		idx = &cmd[1];
-	else
+	if (!modem_obj_path) {
+		cme_err = CME_ERROR_AG_FAILURE;
+		goto done;
+	}
+
+	if (!(telephony_features & AG_FEATURE_THREE_WAY_CALLING)) {
+		cme_err = CME_ERROR_NOT_SUPPORTED;
+		goto done;
+	}
+
+	if (strlen(cmd) > 1) {
+		if (cmd[0] != '1' && cmd[0] != '2') {
+			cme_err = CME_ERROR_NOT_SUPPORTED;
+			goto done;
+		}
+
+		if (telephony_features & AG_FEATURE_ENHANCED_CALL_CONTROL) {
+			idx = &cmd[1];
+		} else {
+			cme_err = CME_ERROR_NOT_SUPPORTED;
+			goto done;
+		}
+	} else
 		idx = NULL;
 
-	if (idx)
+	if (idx) {
 		call = g_slist_nth_data(calls, strtol(idx, NULL, 0) - 1);
-	else
+		if (call == NULL) {
+			cme_err = CME_ERROR_INVALID_INDEX;
+			goto done;
+		}
+	} else
 		call = NULL;
 
 	switch (cmd[0]) {
@@ -575,43 +605,63 @@ void telephony_call_hold_req(void *telephony_device, const char *cmd)
 		break;
 	case '1':
 		if (idx) {
-			if (call)
-				err = release_call(call);
-			break;
+			if (release_call(call) != 0)
+				cme_err = CME_ERROR_AG_FAILURE;
+		} else {
+			if (release_answer_calls() != 0)
+				cme_err = CME_ERROR_AG_FAILURE;
 		}
-		err = release_answer_calls();
 		break;
 	case '2':
 		if (idx) {
-			if (call)
-				err = split_call(call);
+			if (split_call(call))
+				cme_err = CME_ERROR_AG_FAILURE;
 		} else {
 			call = find_vc_with_status(CALL_STATUS_WAITING);
 
-			if (call)
-				err = answer_call(call);
-			else
-				err = swap_calls();
+			if (call) {
+				if (answer_call(call))
+					cme_err = CME_ERROR_AG_FAILURE;
+			} else {
+				if (swap_calls())
+					cme_err = CME_ERROR_AG_FAILURE;
+			}
 		}
 		break;
 	case '3':
-		if (find_vc_with_status(CALL_STATUS_HELD) ||
-				find_vc_with_status(CALL_STATUS_WAITING))
-			err = create_conference();
+		if (!(telephony_supp_features & AG_FEATURE_SUPP_CONF_CALL)) {
+			cme_err = CME_ERROR_NOT_SUPPORTED;
+		} else {
+			if (find_vc_with_status(CALL_STATUS_HELD) ||
+				find_vc_with_status(CALL_STATUS_WAITING)) {
+				if (create_conference())
+					cme_err = CME_ERROR_AG_FAILURE;
+			} else {
+				cme_err = CME_ERROR_NOT_ALLOWED;
+			}
+		}
 		break;
 	case '4':
-		err = call_transfer();
+		if (!(telephony_supp_features & AG_FEATURE_SUPP_CONF_CALL)) {
+			cme_err = CME_ERROR_NOT_SUPPORTED;
+		} else {
+			if (find_vc_with_status(CALL_STATUS_HELD) ||
+				find_vc_with_status(CALL_STATUS_WAITING)) {
+				if (call_transfer())
+					cme_err = CME_ERROR_AG_FAILURE;
+			} else {
+				cme_err = CME_ERROR_NOT_ALLOWED;
+			}
+		}
 		break;
 	default:
 		DBG("Unknown call hold request");
+		cme_err = CME_ERROR_NOT_SUPPORTED;
 		break;
 	}
 
-	if (err)
-		telephony_call_hold_rsp(telephony_device,
-					CME_ERROR_AG_FAILURE);
-	else
-		telephony_call_hold_rsp(telephony_device, CME_ERROR_NONE);
+done:
+	telephony_call_hold_rsp(telephony_device, cme_err);
 }
 
 void telephony_nr_and_ec_req(void *telephony_device, gboolean enable)
@@ -702,7 +752,28 @@ static void call_free(void *data)
 	g_dbus_remove_watch(connection, vc->watch);
 	g_free(vc->obj_path);
 	g_free(vc->number);
+	memset(vc, 0, sizeof(struct voice_call));
 	g_free(vc);
+}
+
+static void update_held_status(void)
+{
+	DBG("");
+
+	if (find_vc_with_status(CALL_STATUS_HELD)) {
+		if (find_vc_without_status(CALL_STATUS_HELD))
+			telephony_update_indicator(ofono_indicators,
+						"callheld",
+						EV_CALLHELD_MULTIPLE);
+		else
+			telephony_update_indicator(ofono_indicators,
+						"callheld",
+						EV_CALLHELD_ON_HOLD);
+	} else {
+		telephony_update_indicator(ofono_indicators,
+					"callheld",
+					EV_CALLHELD_NONE);
+	}
 }
 
 static gboolean handle_vc_property_changed(DBusConnection *conn,
@@ -757,15 +828,8 @@ static gboolean handle_vc_property_changed(DBusConnection *conn,
 			vc->originating = FALSE;
 		} else if (g_str_equal(state, "held")) {
 			vc->status = CALL_STATUS_HELD;
-			if (find_vc_without_status(CALL_STATUS_HELD))
-				telephony_update_indicator(ofono_indicators,
-							"callheld",
-							EV_CALLHELD_MULTIPLE);
-			else
-				telephony_update_indicator(ofono_indicators,
-							"callheld",
-							EV_CALLHELD_ON_HOLD);
 		}
+		update_held_status();
 	} else if (g_str_equal(property, "Multiparty")) {
 		dbus_bool_t multiparty;
 
@@ -1632,22 +1696,27 @@ static int statefs_batt_init(const char *path)
 	return 0;
 }
 
-int telephony_init(uint32_t disabled_features, enum batt_info_source batt,
-		void *batt_param, gchar *last_number_path)
+int telephony_init(uint32_t disabled_features, uint32_t disabled_supp_features,
+		enum batt_info_source batt, void *batt_param,
+		gchar *last_number_path)
 {
-	uint32_t features = AG_FEATURE_EC_ANDOR_NR |
+	const char *battery_cap = "battery";
+	const char *chld_str = NULL;
+	int ret;
+	guint watch;
+
+	telephony_features = AG_FEATURE_EC_ANDOR_NR |
 				AG_FEATURE_INBAND_RINGTONE |
 				AG_FEATURE_REJECT_A_CALL |
 				AG_FEATURE_ENHANCED_CALL_STATUS |
 				AG_FEATURE_ENHANCED_CALL_CONTROL |
 				AG_FEATURE_EXTENDED_ERROR_RESULT_CODES |
 				AG_FEATURE_THREE_WAY_CALLING;
-	const char *battery_cap = "battery";
-	int ret;
-	guint watch;
+	telephony_features &= ~disabled_features;
 
-	features &= ~disabled_features;
-
+	telephony_supp_features = AG_FEATURE_SUPP_CONF_CALL;
+	telephony_supp_features &= ~disabled_supp_features;
+	
 	connection = dbus_bus_get(DBUS_BUS_SYSTEM, NULL);
 
 	add_watch(OFONO_BUS_NAME, NULL, OFONO_MODEM_INTERFACE,
@@ -1699,8 +1768,20 @@ int telephony_init(uint32_t disabled_features, enum batt_info_source batt,
 
 	DBG("telephony_init() successfully");
 
-	telephony_ready_ind(features, ofono_indicators, BTRH_NOT_SUPPORTED,
-								chld_str);
+	if (!(telephony_supp_features & AG_FEATURE_SUPP_CONF_CALL)) {
+		chld_str =
+			(telephony_features & AG_FEATURE_ENHANCED_CALL_CONTROL)
+			? "0,1,1x,2,2x"
+			: "0,1,2";
+	} else {
+		chld_str =
+			(telephony_features & AG_FEATURE_ENHANCED_CALL_CONTROL)
+			? "0,1,1x,2,2x,3,4"
+			: "0,1,2,3,4";
+	}
+
+	telephony_ready_ind(telephony_features, ofono_indicators,
+					BTRH_NOT_SUPPORTED, chld_str);
 
 	return ret;
 }

@@ -119,12 +119,14 @@ static struct enabled_interfaces enabled = {
 };
 
 static void setup_telephony_ag_features(GKeyFile *config,
-					uint32_t *disabled)
+					uint32_t *disabled,
+					uint32_t *disabled_supp)
 {
 	char **list;
 	int i;
 
 	*disabled = 0;
+	*disabled_supp = 0;
 
 	if (!config)
 		return;
@@ -152,6 +154,8 @@ static void setup_telephony_ag_features(GKeyFile *config,
 			*disabled |= AG_FEATURE_ENHANCED_CALL_CONTROL;
 		else if (g_str_equal(list[i], "ExtendedErrorResultCodes"))
 			*disabled |= AG_FEATURE_EXTENDED_ERROR_RESULT_CODES;
+		else if (g_str_equal(list[i], "ConferenceCalling"))
+			*disabled_supp |= AG_FEATURE_SUPP_CONF_CALL;
 	}
 	g_strfreev(list);
 }
@@ -966,6 +970,7 @@ static void state_changed(struct btd_adapter *adapter, gboolean powered)
 
 	if (powered) {
 		uint32_t disabled_features;
+		uint32_t disabled_supp_features;
 		enum batt_info_source batt;
 		void *batt_param = NULL;
 		gchar *last_path = NULL;
@@ -973,10 +978,12 @@ static void state_changed(struct btd_adapter *adapter, gboolean powered)
 		/* telephony driver already initialized*/
 		if (telephony == TRUE)
 			return;
-		setup_telephony_ag_features(config, &disabled_features);
+		setup_telephony_ag_features(config, &disabled_features,
+						&disabled_supp_features);
 		batt = telephony_battery_info_source(config, &batt_param);
 		last_path = telephony_last_dialed_number_path(config);
-		telephony_init(disabled_features, batt, batt_param, last_path);
+		telephony_init(disabled_features, disabled_supp_features,
+					batt, batt_param, last_path);
 		g_free(batt_param);
 		g_free(last_path);
 		telephony = TRUE;

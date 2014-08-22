@@ -400,7 +400,7 @@ static DBusMessage *connection_connect(DBusConnection *conn,
 
 	if (dbus_message_get_args(msg, NULL, DBUS_TYPE_STRING, &svc,
 						DBUS_TYPE_INVALID) == FALSE)
-		return NULL;
+		return btd_error_invalid_args(msg);
 
 	id = bnep_service_id(svc);
 	nc = find_connection(peer->connections, id);
@@ -554,7 +554,9 @@ static void path_unregister(void *data)
 
 static const GDBusMethodTable connection_methods[] = {
 	{ GDBUS_ASYNC_METHOD("Connect",
-			NULL, NULL, connection_connect) },
+			GDBUS_ARGS({"service", "s"}),
+			GDBUS_ARGS({"interface", "s"}),
+			connection_connect) },
 	{ GDBUS_METHOD("Disconnect",
 			NULL, NULL, connection_disconnect) },
 	{ GDBUS_METHOD("GetProperties",

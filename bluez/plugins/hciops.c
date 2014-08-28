@@ -1858,6 +1858,7 @@ static void set_discoverable_timeout(int index)
 
 static void read_scan_complete(int index, uint8_t status, void *ptr)
 {
+	struct dev_info *dev = &devs[index];
 	struct btd_adapter *adapter;
 	read_scan_enable_rp *rp = ptr;
 
@@ -1871,6 +1872,11 @@ static void read_scan_complete(int index, uint8_t status, void *ptr)
 	default:
 		reset_discoverable_timeout(index);
 		hciops_set_limited_discoverable(index, FALSE);
+	}
+
+	if (!dev->up) {
+		DBG("Device is down, not reporting mode change");
+		return;
 	}
 
 	adapter = manager_find_adapter_by_id(index);

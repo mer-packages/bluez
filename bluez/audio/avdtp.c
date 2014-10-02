@@ -604,8 +604,10 @@ static gboolean avdtp_send(struct avdtp *session, uint8_t transaction,
 	return TRUE;
 }
 
-static void pending_req_free(struct pending_req *req)
+static void pending_req_free(void *data)
 {
+	struct pending_req *req = data;
+
 	if (req->timeout)
 		g_source_remove(req->timeout);
 	g_free(req->data);
@@ -1256,6 +1258,8 @@ void avdtp_unref(struct avdtp *session)
 	if (session->req)
 		pending_req_free(session->req);
 
+	g_slist_free_full(session->req_queue, pending_req_free);
+	g_slist_free_full(session->prio_queue, pending_req_free);
 	g_slist_free_full(session->seps, sep_free);
 
 	g_free(session->buf);

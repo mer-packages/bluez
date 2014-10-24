@@ -927,7 +927,8 @@ static void update_call_status(void)
 		return;
 	}
 
-	if (find_vc_with_status(CALL_STATUS_ACTIVE)) {
+	if (find_vc_with_status(CALL_STATUS_ACTIVE) ||
+			find_vc_with_status(CALL_STATUS_HELD)) {
 		telephony_update_indicator(ofono_indicators,
 					"call",
 					EV_CALL_ACTIVE);

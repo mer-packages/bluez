@@ -464,7 +464,7 @@ void telephony_terminate_call_req(void *telephony_device)
 
 	call = find_vc_with_status(CALL_STATUS_ACTIVE);
 	if (!call)
-		call = calls->data;
+		call = calls ? calls->data : NULL;
 
 	if (!call) {
 		error("No active call");

@@ -365,12 +365,16 @@ AC_DEFUN([AC_ARG_BLUEZ], [
 		misc_cflags="$misc_cflags -g"
 	fi
 
-	if (test "${optimization_enable}" = "no"); then
-		misc_cflags="$misc_cflags -O0"
-	fi
-
 	AC_SUBST([MISC_CFLAGS], $misc_cflags)
 	AC_SUBST([MISC_LDFLAGS], $misc_ldflags)
+
+	opt_cflags=""
+
+	if (test "${optimization_enable}" = "no"); then
+		opt_cflags="$opt_cflags -O0"
+	fi
+
+	AC_SUBST([OPT_CFLAGS], $opt_cflags)
 
 	if (test "${usb_enable}" = "yes" && test "${usb_found}" = "yes"); then
 		AC_DEFINE(HAVE_LIBUSB, 1, [Define to 1 if you have USB library.])

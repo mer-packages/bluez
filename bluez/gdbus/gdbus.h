@@ -58,6 +58,7 @@ typedef DBusMessage * (* GDBusMethodFunction) (DBusConnection *connection,
 typedef guint32 GDBusPendingReply;
 
 typedef void (* GDBusSecurityFunction) (DBusConnection *connection,
+						DBusMessage *message,
 						const char *action,
 						gboolean interaction,
 						GDBusPendingReply pending);

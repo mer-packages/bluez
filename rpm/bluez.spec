@@ -153,7 +153,8 @@ This package provides default configs for bluez
     --enable-test \
     --enable-hal=no \
     --with-telephony=ofono \
-    --with-systemdunitdir=/lib/systemd/system
+    --with-systemdunitdir=/lib/systemd/system \
+    --enable-jolla-dbus-access
 
 make %{?jobs:-j%jobs}
 

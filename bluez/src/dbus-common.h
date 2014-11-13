@@ -23,6 +23,8 @@
 
 #define MAX_PATH_LENGTH 64
 
+#define BLUEZ_PRIVILEGED_ACCESS 1
+
 void dict_append_entry(DBusMessageIter *dict,
 			const char *key, int type, void *val);
 

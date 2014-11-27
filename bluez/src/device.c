@@ -882,13 +882,14 @@ static const GDBusMethodTable device_methods[] = {
 				get_properties) },
 	{ GDBUS_METHOD("SetProperty",
 			GDBUS_ARGS({ "name", "s" }, { "value", "v" }), NULL,
-			set_property) },
+			set_property), .privilege = BLUEZ_PRIVILEGED_ACCESS },
 	{ GDBUS_ASYNC_METHOD("DiscoverServices",
 			GDBUS_ARGS({ "pattern", "s" }),
 			GDBUS_ARGS({ "services", "a{us}" }),
 			discover_services) },
 	{ GDBUS_METHOD("CancelDiscovery", NULL, NULL, cancel_discover) },
-	{ GDBUS_ASYNC_METHOD("Disconnect", NULL, NULL, disconnect) },
+	{ GDBUS_ASYNC_METHOD("Disconnect", NULL, NULL, disconnect),
+			.privilege = BLUEZ_PRIVILEGED_ACCESS },
 	{ }
 };
 

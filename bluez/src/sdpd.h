@@ -55,6 +55,7 @@ void register_public_browse_group(void);
 void register_server_service(void);
 void register_device_id(void);
 void update_device_id(void);
+void register_mps(int mpmd);
 
 int record_sort(const void *r1, const void *r2);
 void sdp_svcdb_reset(void);

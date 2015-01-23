@@ -22,8 +22,8 @@
  */
 
 /* Plugin for checking D-Bus method access for restricted methods.
-   Caller must belong to the privileged group for restricted method
-   calls to succeed. */
+   Caller must belong to the privileged group or have privileged user
+   ID for restricted method calls to succeed. */
 
 #ifdef HAVE_CONFIG_H
 #include <config.h>
@@ -35,6 +35,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <grp.h>
+#include <pwd.h>
 
 #include <gdbus.h>
 
@@ -63,6 +64,8 @@ static const GDBusSecurityTable security[] = {
 
 static GHashTable *gid_hash = NULL;
 static GSList *authorized_gids = NULL;
+static GHashTable *uid_hash = NULL;
+static GSList *authorized_uids = NULL;
 static guint name_changed_watch = 0;
 static guint name_lost_watch = 0;
 
@@ -91,15 +94,23 @@ static gboolean gid_is_authorized(gid_t gid)
 	return FALSE;
 }
 
+static gboolean uid_is_authorized(uid_t uid)
+{
+	if (g_slist_find(authorized_uids, GINT_TO_POINTER(uid))) {
+		DBG("uid %d allowed.", uid);
+		return TRUE;
+	}
+
+	DBG("uid %d denied.", uid);
+	return FALSE;
+}
+
 static gboolean dbus_name_changed(DBusConnection *connection,
 					DBusMessage *message,
 					void *user_data)
 {
 	DBusMessageIter iter;
 	char *name;
-
-	if (!gid_hash)
-		return TRUE;
 
 	if (g_strcmp0(dbus_message_get_signature(message), "sss"))
 		return TRUE;
@@ -110,6 +121,7 @@ static gboolean dbus_name_changed(DBusConnection *connection,
 	DBG("D-Bus name '%s' changed.", name);
 
 	g_hash_table_remove(gid_hash, name);
+	g_hash_table_remove(uid_hash, name);
 
 	return TRUE;
 }
@@ -121,9 +133,6 @@ static gboolean dbus_name_lost(DBusConnection *connection,
 	DBusMessageIter iter;
 	char *name;
 
-	if (!gid_hash)
-		return TRUE;
-
 	if (g_strcmp0(dbus_message_get_signature(message), "s"))
 		return TRUE;
 
@@ -133,6 +142,7 @@ static gboolean dbus_name_lost(DBusConnection *connection,
 	DBG("D-Bus name '%s' lost.", name);
 
 	g_hash_table_remove(gid_hash, name);
+	g_hash_table_remove(uid_hash, name);
 
 	return TRUE;
 }
@@ -153,9 +163,6 @@ static void pid_query_result(DBusPendingCall *pend,
 	if (!reply)
 		goto done;
 
-	if (!gid_hash)
-		goto done;
-
 	if (dbus_message_get_type(reply) == DBUS_MESSAGE_TYPE_ERROR)
 		goto done;
 
@@ -165,16 +172,18 @@ static void pid_query_result(DBusPendingCall *pend,
 	dbus_message_iter_init(reply, &iter);
 	dbus_message_iter_get_basic(&iter, &pid);
 
-	snprintf(path, sizeof(path), "/proc/%u", pid);
-	if (stat(path, &st) < 0)
+	snprintf(path, sizeof(path), "/proc/%u/exe", pid);
+	if (lstat(path, &st) < 0)
 		goto done;
 
-	DBG("query done, pid %d has gid %d", pid, st.st_gid);
+	DBG("query done, pid %d has gid %d, uid %d", pid, st.st_gid, st.st_uid);
 
 	g_hash_table_replace(gid_hash, g_strdup(check->busname),
 				GINT_TO_POINTER(st.st_gid));
+	g_hash_table_replace(uid_hash, g_strdup(check->busname),
+				GINT_TO_POINTER(st.st_uid));
 
-	if (gid_is_authorized(st.st_gid)) {
+	if (gid_is_authorized(st.st_gid) || uid_is_authorized(st.st_uid)) {
 		DBG("allowing access for pid %d, pending %u",
 			pid, check->pending);
 		g_dbus_pending_success(check->connection, check->pending);
@@ -202,7 +211,7 @@ static void jolla_dbus_access_check(DBusConnection *connection,
 	if (!busname)
 		goto fail;
 
-	if (!authorized_gids) {
+	if (!authorized_gids && !authorized_uids) {
 		DBG("No authorization configuration, allowing busname '%s'",
 			busname);
 		g_dbus_pending_success(connection, pending);
@@ -213,6 +222,19 @@ static void jolla_dbus_access_check(DBusConnection *connection,
 		gid_t gid = GPOINTER_TO_INT(p);
 		DBG("known busname '%s' has gid %d", busname, gid);
 		if (gid_is_authorized(gid)) {
+			DBG("allowing access for known busname '%s', "
+				"pending %u", busname, pending);
+			g_dbus_pending_success(connection, pending);
+			return;
+		}
+
+		goto fail;
+	}
+
+	if (g_hash_table_lookup_extended(uid_hash, busname, NULL, &p)) {
+		uid_t uid = GPOINTER_TO_INT(p);
+		DBG("known busname '%s' has uid %d", busname, uid);
+		if (uid_is_authorized(uid)) {
 			DBG("allowing access for known busname '%s', "
 				"pending %u", busname, pending);
 			g_dbus_pending_success(connection, pending);
@@ -281,8 +303,12 @@ static void jolla_dbus_access_exit(void)
 	}
 	g_hash_table_unref(gid_hash);
 	gid_hash = NULL;
+	g_hash_table_unref(uid_hash);
+	uid_hash = NULL;
 	g_slist_free(authorized_gids);
 	authorized_gids = NULL;
+	g_slist_free(authorized_uids);
+	authorized_uids = NULL;
 }
 
 static GKeyFile *load_config(const char *file)
@@ -316,6 +342,10 @@ static int jolla_dbus_access_init(void)
 							"Security",
 							"DBusAuthorizedGroups",
 							NULL, NULL);
+		char **users = g_key_file_get_string_list(config,
+							"Security",
+							"DBusAuthorizedUsers",
+							NULL, NULL);
 
 		for (i = 0; groups && groups[i]; i++) {
 			struct group *group = getgrnam(groups[i]);
@@ -324,16 +354,26 @@ static int jolla_dbus_access_init(void)
 						GINT_TO_POINTER(group->gr_gid));
 		}
 
+		for (i = 0; users && users[i]; i++) {
+			struct passwd *user = getpwnam(users[i]);
+			if (user)
+				authorized_uids = g_slist_prepend(authorized_uids,
+						GINT_TO_POINTER(user->pw_uid));
+		}
+
 		if (groups)
 			g_strfreev(groups);
+		if (users)
+			g_strfreev(users);
 		g_key_file_free(config);
 	}
 
-	if (!authorized_gids)
-		info("No valid configuration for D-Bus authorized groups, "
-			"allowing all");
+	if (!authorized_gids && !authorized_uids)
+		info("No valid configuration for D-Bus authorized groups"
+			"or users, allowing all");
 
 	gid_hash = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
+	uid_hash = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
 
 	name_changed_watch = g_dbus_add_signal_watch(connection,
 							"org.freedesktop.DBus",

@@ -207,6 +207,7 @@ static void jolla_dbus_access_check(DBusConnection *connection,
 	DBusPendingCall *pend = NULL;
 	const char *busname = dbus_message_get_sender(message);
 	gpointer p;
+	gboolean known = FALSE;
 
 	if (!busname)
 		goto fail;
@@ -228,7 +229,7 @@ static void jolla_dbus_access_check(DBusConnection *connection,
 			return;
 		}
 
-		goto fail;
+		known = TRUE;
 	}
 
 	if (g_hash_table_lookup_extended(uid_hash, busname, NULL, &p)) {
@@ -241,6 +242,11 @@ static void jolla_dbus_access_check(DBusConnection *connection,
 			return;
 		}
 
+		known = TRUE;
+	}
+
+	if (known) {
+		DBG("known busname '%s' is not authorized.", busname);
 		goto fail;
 	}
 

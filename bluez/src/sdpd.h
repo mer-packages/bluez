@@ -54,6 +54,7 @@ int service_remove_req(sdp_req_t *req, sdp_buf_t *rsp);
 void register_public_browse_group(void);
 void register_server_service(void);
 void register_device_id(void);
+void update_device_id(void);
 
 int record_sort(const void *r1, const void *r2);
 void sdp_svcdb_reset(void);

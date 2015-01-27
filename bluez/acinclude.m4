@@ -204,6 +204,7 @@ AC_DEFUN([AC_ARG_BLUEZ], [
 	wiimote_enable=no
 	gatt_enable=no
 	jolla_dbus_access_enable=no
+	jolla_did=no
 
 	AC_ARG_ENABLE(optimization, AC_HELP_STRING([--disable-optimization], [disable code optimization]), [
 		optimization_enable=${enableval}
@@ -344,6 +345,10 @@ AC_DEFUN([AC_ARG_BLUEZ], [
 		jolla_dbus_access_enable=${enableval}
 	])
 
+	AC_ARG_ENABLE(jolla_did, AC_HELP_STRING([--enable-jolla-did], [compile with Jolla device ID plugin]), [
+		jolla_did_enable=${enableval}
+	])
+
 	misc_cflags=""
 	misc_ldflags=""
 
@@ -404,4 +409,5 @@ AC_DEFUN([AC_ARG_BLUEZ], [
 	AM_CONDITIONAL(WIIMOTEPLUGIN, test "${wiimote_enable}" = "yes")
 	AM_CONDITIONAL(GATTMODULES, test "${gatt_enable}" = "yes")
 	AM_CONDITIONAL(JOLLADBUSACCESSPLUGIN, test "${jolla_dbus_access_enable}" = "yes")
+	AM_CONDITIONAL(JOLLADIDPLUGIN, test "${jolla_did_enable}" = "yes")
 ])

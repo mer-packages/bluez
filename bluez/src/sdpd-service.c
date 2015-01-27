@@ -231,6 +231,26 @@ void register_device_id(void)
 	update_db_timestamp();
 }
 
+void update_device_id(void)
+{
+	sdp_list_t *list;
+	uuid_t uuid;
+
+	sdp_uuid16_create(&uuid, PNP_INFO_SVCLASS_ID);
+
+	for (list = sdp_get_record_list(); list; list = list->next) {
+		sdp_record_t *rec = list->data;
+		if (!sdp_uuid_cmp(&uuid, &rec->svclass)) {
+			DBG("Removing old DI record (handle %d)", rec->handle);
+			remove_record_from_server(rec->handle);
+			break;
+		}
+
+	}
+
+	register_device_id();
+}
+
 int add_record_to_server(const bdaddr_t *src, sdp_record_t *rec)
 {
 	sdp_data_t *data;

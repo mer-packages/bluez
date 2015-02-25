@@ -28,6 +28,8 @@ include_HEADERS =
 AM_CFLAGS = $(WARNING_CFLAGS) $(MISC_CFLAGS)
 AM_LDFLAGS = $(MISC_LDFLAGS)
 
+CFLAGS += $(OPT_CFLAGS)
+
 if DATAFILES
 dbusdir = $(sysconfdir)/dbus-1/system.d
 dbusservicedir = $(datadir)/dbus-1/system-services

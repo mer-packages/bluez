@@ -41,6 +41,7 @@
 #include "log.h"
 #include "error.h"
 #include "device.h"
+#include "avctp.h"
 #include "avdtp.h"
 #include "media.h"
 #include "transport.h"
@@ -62,6 +63,8 @@ struct media_adapter {
 	DBusConnection		*conn;		/* Adapter connection */
 	GSList			*endpoints;	/* Endpoints list */
 	GSList			*players;	/* Players list */
+	struct avrcp_player	*avrcp_player;
+	unsigned int		avctp_id;
 };
 
 struct endpoint_request {
@@ -91,7 +94,6 @@ struct media_endpoint {
 
 struct media_player {
 	struct media_adapter	*adapter;
-	struct avrcp_player	*player;
 	char			*sender;	/* Player DBus bus id */
 	char			*path;		/* Player object path */
 	GHashTable		*settings;	/* Player settings */
@@ -112,6 +114,8 @@ struct metadata_value {
 		uint32_t	num;
 	} value;
 };
+
+static uint64_t get_uid(void *user_data);
 
 static GSList *adapters = NULL;
 
@@ -982,10 +986,49 @@ static void media_player_free(gpointer data)
 {
 	struct media_player *mp = data;
 	struct media_adapter *adapter = mp->adapter;
+	gboolean first = FALSE;
 
-	if (mp->player) {
-		adapter->players = g_slist_remove(adapter->players, mp);
-		release_player(mp);
+	if (mp == g_slist_nth_data(adapter->players, 0))
+		first = TRUE;
+	adapter->players = g_slist_remove(adapter->players, mp);
+
+	if (first) {
+		/* Active player removed, update events */
+		struct media_player *head =
+			g_slist_nth_data(adapter->players, 0);
+
+		int old_status = mp->status;
+		int new_status = head
+			? head->status
+			: AVRCP_PLAY_STATUS_STOPPED;
+
+		uint64_t new_uid = head ? get_uid(head) : UINT64_MAX;
+		if (old_status != new_status) {
+			if (new_status == AVRCP_PLAY_STATUS_STOPPED) {
+				avrcp_player_event(adapter->avrcp_player,
+						AVRCP_EVENT_TRACK_REACHED_END,
+						NULL);
+			} else {
+				avrcp_player_event(adapter->avrcp_player,
+						AVRCP_EVENT_TRACK_REACHED_START,
+						NULL);
+			}
+			avrcp_player_event(adapter->avrcp_player,
+						AVRCP_EVENT_TRACK_CHANGED,
+						&new_uid);
+			avrcp_player_event(adapter->avrcp_player,
+						AVRCP_EVENT_STATUS_CHANGED,
+						&new_status);
+		} else {
+			if (new_status != AVRCP_PLAY_STATUS_STOPPED) {
+				avrcp_player_event(adapter->avrcp_player,
+						AVRCP_EVENT_TRACK_REACHED_START,
+						NULL);
+				avrcp_player_event(adapter->avrcp_player,
+						AVRCP_EVENT_TRACK_CHANGED,
+						&new_uid);
+			}
+		}
 	}
 
 	g_dbus_remove_watch(adapter->conn, mp->watch);
@@ -1004,28 +1047,10 @@ static void media_player_free(gpointer data)
 	g_free(mp);
 }
 
-static void media_player_destroy(struct media_player *mp)
-{
-	struct media_adapter *adapter = mp->adapter;
-
-	DBG("sender=%s path=%s", mp->sender, mp->path);
-
-	if (mp->player) {
-		struct avrcp_player *player = mp->player;
-		mp->player = NULL;
-		adapter->players = g_slist_remove(adapter->players, mp);
-		avrcp_unregister_player(player);
-		return;
-	}
-
-	media_player_free(mp);
-}
-
 static void media_player_remove(struct media_player *mp)
 {
 	info("Player unregistered: sender=%s path=%s", mp->sender, mp->path);
-
-	media_player_destroy(mp);
+	media_player_free(mp);
 }
 
 static const char *attrval_to_str(uint8_t attr, uint8_t value)
@@ -1370,17 +1395,6 @@ static void set_volume(uint8_t volume, struct audio_device *dev, void *user_data
 	}
 }
 
-static struct avrcp_player_cb player_cb = {
-	.get_setting = get_setting,
-	.set_setting = set_setting,
-	.list_metadata = list_metadata,
-	.get_uid = get_uid,
-	.get_metadata = get_metadata,
-	.get_position = get_position,
-	.get_status = get_status,
-	.set_volume = set_volume
-};
-
 static void media_player_exit(DBusConnection *connection, void *user_data)
 {
 	struct media_player *mp = user_data;
@@ -1414,7 +1428,8 @@ static gboolean set_status(struct media_player *mp, DBusMessageIter *iter)
 
 	mp->status = val;
 
-	avrcp_player_event(mp->player, AVRCP_EVENT_STATUS_CHANGED, &val);
+	avrcp_player_event(mp->adapter->avrcp_player,
+				AVRCP_EVENT_STATUS_CHANGED, &val);
 
 	return TRUE;
 }
@@ -1434,13 +1449,15 @@ static gboolean set_position(struct media_player *mp, DBusMessageIter *iter)
 	g_timer_start(mp->timer);
 
 	if (!mp->position) {
-		avrcp_player_event(mp->player,
+		avrcp_player_event(mp->adapter->avrcp_player,
 					AVRCP_EVENT_TRACK_REACHED_START, NULL);
 		return TRUE;
 	}
 
-	duration = g_hash_table_lookup(mp->track, GUINT_TO_POINTER(
-					AVRCP_MEDIA_ATTRIBUTE_DURATION));
+	duration = mp->track
+		? g_hash_table_lookup(mp->track, GUINT_TO_POINTER(
+					AVRCP_MEDIA_ATTRIBUTE_DURATION))
+		: NULL;
 
 	/*
 	 * If position is the maximum value allowed or greater than track's
@@ -1448,8 +1465,8 @@ static gboolean set_position(struct media_player *mp, DBusMessageIter *iter)
 	 */
 	if (mp->position == UINT32_MAX ||
 			(duration && mp->position >= duration->value.num))
-		avrcp_player_event(mp->player, AVRCP_EVENT_TRACK_REACHED_END,
-									NULL);
+		avrcp_player_event(mp->adapter->avrcp_player,
+					AVRCP_EVENT_TRACK_REACHED_END, NULL);
 
 	return TRUE;
 }
@@ -1641,9 +1658,10 @@ static gboolean parse_player_metadata(struct media_player *mp,
 	g_timer_start(mp->timer);
 	uid = get_uid(mp);
 
-	avrcp_player_event(mp->player, AVRCP_EVENT_TRACK_CHANGED, &uid);
-	avrcp_player_event(mp->player, AVRCP_EVENT_TRACK_REACHED_START,
-								NULL);
+	avrcp_player_event(mp->adapter->avrcp_player,
+				AVRCP_EVENT_TRACK_CHANGED, &uid);
+	avrcp_player_event(mp->adapter->avrcp_player,
+				AVRCP_EVENT_TRACK_REACHED_START, NULL);
 
 	return TRUE;
 
@@ -1699,14 +1717,6 @@ static struct media_player *media_player_create(struct media_adapter *adapter,
 						"TrackChanged",
 						track_changed,
 						mp, NULL);
-	mp->player = avrcp_register_player(&adapter->src, &player_cb, mp,
-						media_player_free);
-	if (!mp->player) {
-		if (err)
-			*err = -EPROTONOSUPPORT;
-		media_player_destroy(mp);
-		return NULL;
-	}
 
 	mp->settings = g_hash_table_new(g_direct_hash, g_direct_equal);
 
@@ -1784,14 +1794,14 @@ static DBusMessage *register_player(DBusConnection *conn, DBusMessage *msg,
 	}
 
 	if (parse_player_properties(mp, &args) == FALSE) {
-		media_player_destroy(mp);
+		media_player_free(mp);
 		return btd_error_invalid_args(msg);
 	}
 
 	dbus_message_iter_next(&args);
 
 	if (parse_player_metadata(mp, &args) == FALSE) {
-		media_player_destroy(mp);
+		media_player_free(mp);
 		return btd_error_invalid_args(msg);
 	}
 
@@ -1840,6 +1850,18 @@ static void path_free(void *data)
 {
 	struct media_adapter *adapter = data;
 
+	if (adapter->avctp_id)
+		avctp_remove_state_cb(adapter->avctp_id);
+
+	while (adapter->players) {
+		struct media_player *mp = g_slist_nth_data(adapter->players, 0);
+		release_player(mp);
+		media_player_free(mp);
+	}
+
+	if (adapter->avrcp_player)
+		avrcp_unregister_player(adapter->avrcp_player);
+
 	while (adapter->endpoints)
 		release_endpoint(adapter->endpoints->data);
 
@@ -1849,6 +1871,134 @@ static void path_free(void *data)
 
 	g_free(adapter->path);
 	g_free(adapter);
+}
+
+static int proxy_get_setting(uint8_t attr, void *user_data)
+{
+	struct media_adapter *adapter = user_data;
+
+	DBG("%s", attr_to_str(attr));
+
+	if (adapter->players)
+		return get_setting(attr, g_slist_nth_data(adapter->players, 0));
+
+	return -EINVAL;
+}
+
+static int proxy_set_setting(uint8_t attr, uint8_t val, void *user_data)
+{
+	struct media_adapter *adapter = user_data;
+
+	DBG("%s = %s", attr_to_str(attr), attrval_to_str(attr, val));
+
+	if (adapter->players)
+		return set_setting(attr, val, g_slist_nth_data(adapter->players, 0));
+
+	return -EINVAL;
+}
+
+static GList *proxy_list_metadata(void *user_data)
+{
+	struct media_adapter *adapter = user_data;
+
+	DBG("");
+
+	if (adapter->players)
+		return list_metadata(g_slist_nth_data(adapter->players, 0));
+
+	return NULL;
+}
+
+static uint64_t proxy_get_uid(void *user_data)
+{
+	struct media_adapter *adapter = user_data;
+
+	DBG("");
+
+	if (adapter->players)
+		return get_uid(g_slist_nth_data(adapter->players, 0));
+
+	return UINT64_MAX;
+}
+
+static void *proxy_get_metadata(uint32_t id, void *user_data)
+{
+	struct media_adapter *adapter = user_data;
+
+	DBG("%s", metadata_to_str(id));
+
+	if (adapter->players)
+		return get_metadata(id, g_slist_nth_data(adapter->players, 0));
+
+	return NULL;
+}
+
+static uint8_t proxy_get_status(void *user_data)
+{
+	struct media_adapter *adapter = user_data;
+
+	DBG("");
+
+	if (adapter->players)
+		return get_status(g_slist_nth_data(adapter->players, 0));
+
+	return AVRCP_PLAY_STATUS_STOPPED;
+}
+
+static uint32_t proxy_get_position(void *user_data)
+{
+	struct media_adapter *adapter = user_data;
+
+	DBG("");
+
+	if (adapter->players)
+		return get_position(g_slist_nth_data(adapter->players, 0));
+
+	return 0;
+}
+
+static void proxy_set_volume(uint8_t volume, struct audio_device *dev, void *user_data)
+{
+	struct media_adapter *adapter = user_data;
+
+	DBG("");
+
+	if (adapter->players)
+		return set_volume(volume, dev, g_slist_nth_data(adapter->players, 0));
+}
+
+static void proxy_free(gpointer data)
+{
+	struct media_adapter *adapter = data;
+
+	DBG("");
+
+	adapter->avrcp_player = NULL;
+}
+
+static struct avrcp_player_cb proxy_cb = {
+	.get_setting = proxy_get_setting,
+	.set_setting = proxy_set_setting,
+	.list_metadata = proxy_list_metadata,
+	.get_uid = proxy_get_uid,
+	.get_metadata = proxy_get_metadata,
+	.get_position = proxy_get_position,
+	.get_status = proxy_get_status,
+	.set_volume = proxy_set_volume
+};
+
+static void state_changed(struct audio_device *dev, avctp_state_t old_state,
+				avctp_state_t new_state, void *user_data)
+{
+	struct media_adapter *adapter = user_data;
+
+	DBG("adapter %p", adapter);
+
+	if (!adapter->avrcp_player && new_state == AVCTP_STATE_CONNECTING)
+		adapter->avrcp_player = avrcp_register_player(&adapter->src,
+								&proxy_cb,
+								adapter,
+								proxy_free);
 }
 
 int media_register(DBusConnection *conn, const char *path, const bdaddr_t *src)
@@ -1867,6 +2017,8 @@ int media_register(DBusConnection *conn, const char *path, const bdaddr_t *src)
 		path_free(adapter);
 		return -1;
 	}
+
+	adapter->avctp_id = avctp_add_state_cb(state_changed, adapter);
 
 	adapters = g_slist_append(adapters, adapter);
 

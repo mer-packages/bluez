@@ -414,7 +414,7 @@ int avrcp_player_event(struct avrcp_player *player, uint8_t id, void *data)
 	uint16_t size;
 	int err;
 
-	if (player->session == NULL)
+	if (!player || player->session == NULL)
 		return -ENOTCONN;
 
 	if (!(player->registered_events & (1 << id)))

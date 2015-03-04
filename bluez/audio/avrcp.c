@@ -182,12 +182,14 @@ static uint32_t company_ids[] = {
 
 struct avrcp_ct_config {
 	gboolean enabled;
+	uint16_t avctp_ver;
 	uint16_t avrcp_ver;
 	uint16_t disabled_features;
 };
 
 struct avrcp_tg_config {
 	gboolean enabled;
+	uint16_t avctp_ver;
 	uint16_t avrcp_ver;
 	uint16_t disabled_features;
 };
@@ -195,11 +197,13 @@ struct avrcp_tg_config {
 struct avrcp_ct_config avrcp_ct_config = {
 	TRUE,
 	DEFAULT_PROTOCOL_VERSION,
+	DEFAULT_PROTOCOL_VERSION,
 	0
 };
 
 struct avrcp_tg_config avrcp_tg_config = {
 	TRUE,
+	DEFAULT_PROTOCOL_VERSION,
 	DEFAULT_PROTOCOL_VERSION,
 	0
 };
@@ -221,6 +225,8 @@ static sdp_record_t *avrcp_ct_record(void)
 						AVRCP_FEATURE_CATEGORY_3 |
 						AVRCP_FEATURE_CATEGORY_4 );
 
+	if (avrcp_ct_config.avctp_ver != DEFAULT_PROTOCOL_VERSION)
+		avctp_ver = avrcp_ct_config.avctp_ver;
 	if (avrcp_ct_config.avrcp_ver != DEFAULT_PROTOCOL_VERSION)
 		avrcp_ver = avrcp_ct_config.avrcp_ver;
 	feat &= ~avrcp_ct_config.disabled_features;
@@ -294,6 +300,8 @@ static sdp_record_t *avrcp_tg_record(void)
 					AVRCP_FEATURE_CATEGORY_4 |
 					AVRCP_FEATURE_PLAYER_SETTINGS );
 
+	if (avrcp_tg_config.avctp_ver != DEFAULT_PROTOCOL_VERSION)
+		avctp_ver = avrcp_tg_config.avctp_ver;
 	if (avrcp_tg_config.avrcp_ver != DEFAULT_PROTOCOL_VERSION)
 		avrcp_ver = avrcp_tg_config.avrcp_ver;
 	feat &= ~avrcp_tg_config.disabled_features;
@@ -1302,7 +1310,8 @@ void avrcp_disconnect(struct audio_device *dev)
 
 static void setup_avrcp_tg_config(GKeyFile *config,
 				gboolean *enabled,
-				uint16_t *version,
+				uint16_t *avctp_version,
+				uint16_t *avrcp_version,
 				uint16_t *disabled_features)
 {
 	GError *err = NULL;
@@ -1313,6 +1322,20 @@ static void setup_avrcp_tg_config(GKeyFile *config,
 
 	if (!config)
 		return;
+
+	s = g_key_file_get_string(config, "AVCTP", "Version", &err);
+	if (err) {
+		DBG("audio.conf: %s", err->message);
+		g_error_free(err);
+		err = NULL;
+	} else {
+		*avctp_version = strtol(s, NULL, 16);
+		if (*avctp_version < 0x0102)
+			*avctp_version = 0x0102;
+		else if (*avctp_version > 0x0103)
+			*avctp_version = 0x0103;
+		g_free(s);
+	}
 
 	b = g_key_file_get_boolean(config, "AVRCP", "EnableTarget", &err);
 	if (err) {
@@ -1328,7 +1351,7 @@ static void setup_avrcp_tg_config(GKeyFile *config,
 		g_error_free(err);
 		err = NULL;
 	} else {
-		*version = strtol(s, NULL, 16);
+		*avrcp_version = strtol(s, NULL, 16);
 		g_free(s);
 	}
 
@@ -1354,7 +1377,8 @@ static void setup_avrcp_tg_config(GKeyFile *config,
 
 static void setup_avrcp_ct_config(GKeyFile *config,
 				gboolean *enabled,
-				uint16_t *version,
+				uint16_t *avctp_version,
+				uint16_t *avrcp_version,
 				uint16_t *disabled_features)
 {
 	GError *err = NULL;
@@ -1365,6 +1389,20 @@ static void setup_avrcp_ct_config(GKeyFile *config,
 
 	if (!config)
 		return;
+
+	s = g_key_file_get_string(config, "AVCTP", "Version", &err);
+	if (err) {
+		DBG("audio.conf: %s", err->message);
+		g_error_free(err);
+		err = NULL;
+	} else {
+		*avctp_version = strtol(s, NULL, 16);
+		if (*avctp_version < 0x0102)
+			*avctp_version = 0x0102;
+		else if (*avctp_version > 0x0103)
+			*avctp_version = 0x0103;
+		g_free(s);
+	}
 
 	b = g_key_file_get_boolean(config, "AVRCP", "EnableControl", &err);
 	if (err) {
@@ -1380,7 +1418,7 @@ static void setup_avrcp_ct_config(GKeyFile *config,
 		g_error_free(err);
 		err = NULL;
 	} else {
-		*version = strtol(s, NULL, 16);
+		*avrcp_version = strtol(s, NULL, 16);
 		g_free(s);
 	}
 
@@ -1420,11 +1458,13 @@ int avrcp_register(DBusConnection *conn, const bdaddr_t *src, GKeyFile *config)
 
 		setup_avrcp_tg_config(config,
 				&avrcp_tg_config.enabled,
+				&avrcp_tg_config.avctp_ver,
 				&avrcp_tg_config.avrcp_ver,
 				&avrcp_tg_config.disabled_features);
 
 		setup_avrcp_ct_config(config,
 				&avrcp_ct_config.enabled,
+				&avrcp_ct_config.avctp_ver,
 				&avrcp_ct_config.avrcp_ver,
 				&avrcp_ct_config.disabled_features);
 	}

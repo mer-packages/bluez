@@ -737,6 +737,9 @@ static void discover_services_reply(struct browse_req *req, int err,
 	DBusMessageIter iter, dict;
 	sdp_list_t *seq;
 
+	if (!req->msg)
+		return;
+
 	if (err) {
 		const char *err_if;
 

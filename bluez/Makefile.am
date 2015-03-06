@@ -316,7 +316,8 @@ src_bluetoothd_SOURCES = $(gdbus_sources) $(builtin_sources) \
 			src/device.h src/device.c src/attio.h \
 			src/dbus-common.c src/dbus-common.h \
 			src/event.h src/event.c \
-			src/oob.h src/oob.c src/eir.h src/eir.c
+			src/oob.h src/oob.c src/eir.h src/eir.c \
+			src/wakelock.h src/wakelock.c
 src_bluetoothd_LDADD = lib/libbluetooth-private.la @GLIB_LIBS@ @DBUS_LIBS@ \
 								-ldl -lrt
 src_bluetoothd_LDFLAGS = $(AM_LDFLAGS) -Wl,--export-dynamic \

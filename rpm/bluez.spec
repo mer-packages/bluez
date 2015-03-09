@@ -156,7 +156,8 @@ This package provides default configs for bluez
     --with-systemdunitdir=/lib/systemd/system \
     --enable-jolla-dbus-access \
     --enable-gatt \
-    --enable-jolla-did
+    --enable-jolla-did \
+    --enable-jolla-wakelock
 
 make %{?jobs:-j%jobs}
 

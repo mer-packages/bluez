@@ -45,8 +45,39 @@
 #include "headset.h"
 #include "manager.h"
 #include "gateway.h"
+#include "wakelock.h"
+#include "main.h"
+
+#define AUDIO_WAKELOCK_DURATION 5
 
 static GIOChannel *sco_server = NULL;
+
+static struct wakelock *audio_wakelock = NULL;
+
+static guint audio_wakelock_source = 0;
+
+static gboolean audio_wakelock_put(gpointer user_data)
+{
+	wakelock_release(audio_wakelock);
+	audio_wakelock_source = 0;
+	return FALSE;
+}
+
+void audio_wakelock_get(void)
+{
+	guint old_source = audio_wakelock_source;
+
+	audio_wakelock_source = g_timeout_add_seconds(AUDIO_WAKELOCK_DURATION,
+							audio_wakelock_put,
+							NULL);
+	if (audio_wakelock_source)
+		wakelock_acquire(audio_wakelock);
+
+	if (old_source) {
+		g_source_remove(old_source);
+		wakelock_release(audio_wakelock);
+	}
+}
 
 static GKeyFile *load_config_file(const char *file)
 {
@@ -148,6 +179,9 @@ static int audio_init(void)
 	if (connection == NULL)
 		return -EIO;
 
+	if (wakelock_create("audio", &audio_wakelock) < 0)
+		goto failed;
+
 	config = load_config_file(CONFIGDIR "/audio.conf");
 
 	if (audio_manager_init(connection, config, &enable_sco) < 0)
@@ -169,6 +203,11 @@ static int audio_init(void)
 failed:
 	audio_manager_exit();
 
+	if (audio_wakelock) {
+		wakelock_free(audio_wakelock);
+		audio_wakelock = NULL;
+	}
+
 	if (connection) {
 		dbus_connection_unref(connection);
 		connection = NULL;
@@ -186,6 +225,15 @@ static void audio_exit(void)
 	}
 
 	audio_manager_exit();
+
+	if (audio_wakelock) {
+		if (audio_wakelock_source) {
+			g_source_remove(audio_wakelock_source);
+			audio_wakelock_source = 0;
+		}
+		wakelock_free(audio_wakelock);
+		audio_wakelock = NULL;
+	}
 
 	dbus_connection_unref(connection);
 }

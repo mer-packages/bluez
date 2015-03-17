@@ -268,10 +268,11 @@
 			MPS_MPMD_AVRCP_CT_ONLY | MPS_MPMD_AVRCP_TG | \
 			MPS_MPMD_DUN_DT)
 
-/* Assume all dependencies are supported */
-#define MPS_DEFAULT_DEPS (MPS_DEPS_SNIFF_MODE_DURRING_STREAMING | \
+#define MPS_DEPS_ALL (MPS_DEPS_SNIFF_MODE_DURRING_STREAMING | \
 			MPS_DEPS_GAVDP_REQUIREMENTS | \
 			MPS_DEPS_DIS_CONNECTION_ORDER_BEHAVIOR)
+
+#define MPS_DEFAULT_DEPS 0
 
 static sdp_record_t *server = NULL;
 
@@ -569,6 +570,20 @@ static uint64_t mps_mpmd_features(void)
 	return feat;
 }
 
+static uint16_t mps_deps(void)
+{
+	uint16_t deps = MPS_DEPS_ALL;
+
+	if (!class_supported(AUDIO_SOURCE_SVCLASS_ID) ||
+		!class_supported(AV_REMOTE_TARGET_SVCLASS_ID) ||
+		!class_supported(HANDSFREE_AGW_SVCLASS_ID))
+		deps &= ~MPS_DEPS_DIS_CONNECTION_ORDER_BEHAVIOR;
+
+	DBG("%x", deps);
+
+	return deps;
+}
+
 static sdp_record_t *mps_record(int mpmd)
 {
 	sdp_data_t *mpsd_features, *mpmd_features, *dependencies;
@@ -638,6 +653,7 @@ static void update_mps(void)
 	sdp_record_t *rec;
 	sdp_data_t *data;
 	uint64_t mpsd_feat, mpmd_feat;
+	uint16_t deps;
 
 	if (!mps_handle)
 		return;
@@ -655,6 +671,10 @@ static void update_mps(void)
 		data = sdp_data_alloc(SDP_UINT64, &mpmd_feat);
 		sdp_attr_replace(rec, SDP_ATTR_MPMD_SCENARIOS, data);
 	}
+
+	deps = mps_deps();
+	data = sdp_data_alloc(SDP_UINT16, &deps);
+	sdp_attr_replace(rec, SDP_ATTR_MPS_DEPENDENCIES, data);
 }
 
 int add_record_to_server(const bdaddr_t *src, sdp_record_t *rec)

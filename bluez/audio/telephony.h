@@ -152,7 +152,7 @@ enum batt_info_source {
 };
 
 #define BATT_INFO_STATEFS_DEFAULT_PATH \
-	"/run/state/providers/upower/Battery/ChargePercentage"
+	"/run/state/namespaces/Battery/ChargePercentage"
 
 /* Notify telephony-*.c of connected/disconnected devices. Implemented by
  * telephony-*.c

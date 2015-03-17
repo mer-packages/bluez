@@ -23,6 +23,8 @@
  *
  */
 
+#define _GNU_SOURCE
+
 #ifdef HAVE_CONFIG_H
 #include <config.h>
 #endif
@@ -31,7 +33,12 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 #include <glib.h>
+#include <glib-unix.h>
 #include <dbus/dbus.h>
 #include <gdbus.h>
 
@@ -100,8 +107,8 @@ static char *subscriber_number = NULL;
 
 static gboolean events_enabled = FALSE;
 
-static char *statefs_batt_path = NULL;
 static guint statefs_batt_watch = 0;
+static int statefs_batt_fd = -1;
 
 static uint32_t telephony_features = 0;
 static uint32_t telephony_supp_features = 0;
@@ -1646,38 +1653,49 @@ static gboolean handle_manager_modem_removed(DBusConnection *conn,
 	return TRUE;
 }
 
-static gboolean statefs_batt_update(gpointer data)
+static gboolean statefs_batt_update(gint fd, GIOCondition cond, gpointer data)
 {
-	gboolean ret = FALSE;
-	gchar *buf = NULL;
+	gchar buf[8];
 	gchar *endp = NULL;
-	gsize len = 0;
-	GError *err = NULL;
 	guint64 val;
+	int r;
 
-	if (statefs_batt_path == NULL)
-		goto done;
-
-	DBG("Reading battery charge from '%s'.", statefs_batt_path);
-	if (g_file_get_contents(statefs_batt_path, &buf, &len, &err) == FALSE) {
-		DBG("Failed to read battery charge: %s", err->message);
-		goto done;
+	if ((cond & G_IO_ERR) || (cond & G_IO_NVAL) || (cond & G_IO_HUP)) {
+		error("Failed to read battery charge.");
+		goto fail;
 	}
 
+	DBG("Reading battery charge from fd %d", statefs_batt_fd);
+	memset(buf, 0, sizeof(buf));
+	r = read(statefs_batt_fd, buf, sizeof(buf) - 1);
+	if (r < 0) {
+		error("Failed to read battery charge: %s (%d)",
+			strerror(errno), errno);
+		goto fail;
+	} else if (r == 0) {
+		error("End of file for fd %d", statefs_batt_fd);
+		goto fail;
+	}
+
+	lseek(statefs_batt_fd, 0, SEEK_SET);
+
+	DBG("Read charge value: '%s'", buf);
 	val = g_ascii_strtoull(buf, &endp, 10);
 	if (endp == NULL || *endp != '\0') {
-		DBG("Cannot process battery charge string '%s'", buf);
-		goto done;
+		error("Cannot process battery charge string '%s'", buf);
+		goto fail;
 	}
 
 	DBG("Battery charge changed to %llu", val);
-	val = 5*val/100;
+	val = MIN(5, 5*(val+10)/100);
 	telephony_update_indicator(ofono_indicators, "battchg", val);
-	ret = TRUE;
 
-done:
-	g_free(buf);
-	return ret;
+	return TRUE;
+
+fail:
+	close(statefs_batt_fd);
+	statefs_batt_fd = -1;
+	return FALSE;
 }
 
 static void hal_battery_level_reply(DBusPendingCall *call, void *user_data)
@@ -1883,10 +1901,14 @@ static void handle_service_disconnect(DBusConnection *conn, void *user_data)
 
 static int statefs_batt_init(const char *path)
 {
-	statefs_batt_path = g_strdup(path);
-	statefs_batt_watch =
-		g_timeout_add_seconds(60, statefs_batt_update, NULL);
-	statefs_batt_update(NULL);
+	statefs_batt_fd = open(path, O_RDONLY | O_DIRECT);
+	if (statefs_batt_fd < 0) {
+		error("open(%s) failed: %s (%d)", path, strerror(errno), errno);
+		return -errno;
+	}
+	statefs_batt_watch = g_unix_fd_add(statefs_batt_fd,
+						G_IO_IN | G_IO_ERR | G_IO_NVAL | G_IO_HUP,
+						statefs_batt_update, NULL);
 
 	DBG("Statefs battery info source set up. ");
 	return 0;
@@ -2024,9 +2046,9 @@ void telephony_exit(void)
 		statefs_batt_watch = 0;
 	}
 
-	if (statefs_batt_path != NULL) {
-		g_free(statefs_batt_path);
-		statefs_batt_path = NULL;
+	if (statefs_batt_fd >= 0) {
+		close(statefs_batt_fd);
+		statefs_batt_fd = -1;
 	}
 
 	telephony_deinit();

@@ -64,6 +64,12 @@
 
 struct main_opts main_opts;
 
+static enum {
+	MPS_OFF,
+	MPS_SINGLE,
+	MPS_MULTIPLE,
+} mps = MPS_OFF;
+
 static GKeyFile *load_config(const char *file)
 {
 	GError *err = NULL;
@@ -245,6 +251,20 @@ static void parse_config(GKeyFile *config)
 
 	main_opts.link_policy = HCI_LP_RSWITCH | HCI_LP_SNIFF |
 						HCI_LP_HOLD | HCI_LP_PARK;
+
+	str = g_key_file_get_string(config, "General", "MultiProfile", &err);
+	if (err) {
+		g_clear_error(&err);
+	} else {
+		DBG("MultiProfile=%s", str);
+
+		if (!strcmp(str, "single"))
+			mps = MPS_SINGLE;
+		else if (!strcmp(str, "multiple"))
+			mps = MPS_MULTIPLE;
+
+		g_free(str);
+	}
 }
 
 static void init_defaults(void)
@@ -523,6 +543,9 @@ int main(int argc, char *argv[])
 	}
 
 	start_sdp_server(mtu, SDP_SERVER_COMPAT);
+
+	if (mps != MPS_OFF)
+		register_mps(mps == MPS_MULTIPLE);
 
 	/* Loading plugins has to be done after D-Bus has been setup since
 	 * the plugins might wanna expose some paths on the bus. However the

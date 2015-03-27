@@ -247,7 +247,8 @@ static void device_set_state(struct audio_device *dev, audio_state_t new_state)
 							priv->dc_id);
 			priv->dc_id = 0;
 		}
-	} else if (new_state == AUDIO_STATE_CONNECTING)
+	} else if (new_state == AUDIO_STATE_CONNECTING ||
+			(new_state == AUDIO_STATE_CONNECTED && !priv->dc_id))
 		priv->dc_id = device_add_disconnect_watch(dev->btd_dev,
 						disconnect_cb, dev, NULL);
 

@@ -114,10 +114,21 @@ static void sink_set_state(struct audio_device *dev, sink_state_t new_state)
 	sink->state = new_state;
 
 	state_str = state2str(new_state);
-	if (state_str)
+	if (state_str) {
+		/* Some D-Bus clients might not handle a direct
+		   transition from disconnected to connected well */
+		if (old_state == SINK_STATE_DISCONNECTED &&
+			new_state == SINK_STATE_CONNECTED) {
+			const char *intermediate =
+				state2str(SINK_STATE_CONNECTING);
+			emit_property_changed(dev->conn, dev->path,
+						AUDIO_SINK_INTERFACE, "State",
+						DBUS_TYPE_STRING, &intermediate);
+		}
 		emit_property_changed(dev->conn, dev->path,
 					AUDIO_SINK_INTERFACE, "State",
 					DBUS_TYPE_STRING, &state_str);
+	}
 
 	DBG("State changed %s: %s -> %s", dev->path, str_state[old_state],
 		str_state[new_state]);

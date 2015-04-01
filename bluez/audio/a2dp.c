@@ -1041,7 +1041,7 @@ static gboolean suspend_ind(struct avdtp *session, struct avdtp_local_sep *sep,
 	if (start_err < 0 && start_err != -EINPROGRESS) {
 		error("avdtp_start: %s (%d)", strerror(-start_err),
 								-start_err);
-		finalize_setup_errno(setup, start_err, finalize_resume);
+		finalize_setup_errno(setup, start_err, finalize_resume, NULL);
 	}
 
 	return TRUE;
@@ -1197,7 +1197,8 @@ static void abort_ind(struct avdtp *session, struct avdtp_local_sep *sep,
 
 	finalize_setup_errno(setup, -ECONNRESET, finalize_suspend,
 							finalize_resume,
-							finalize_config);
+							finalize_config,
+							NULL);
 
 	return;
 }
@@ -1218,7 +1219,10 @@ static void abort_cfm(struct avdtp *session, struct avdtp_local_sep *sep,
 	if (!setup)
 		return;
 
-	setup_unref(setup);
+	finalize_setup_errno(setup, -ECONNRESET, finalize_suspend,
+							finalize_resume,
+							finalize_config,
+							NULL);
 }
 
 static gboolean reconf_ind(struct avdtp *session, struct avdtp_local_sep *sep,

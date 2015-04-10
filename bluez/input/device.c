@@ -437,7 +437,7 @@ static gboolean intr_watch_cb(GIOChannel *chan, GIOCondition cond, gpointer data
 	iconn->intr_io = NULL;
 
 	/* Close control channel */
-	if (iconn->ctrl_io && !(cond & G_IO_NVAL))
+	if (iconn->ctrl_io)
 		g_io_channel_shutdown(iconn->ctrl_io, TRUE, NULL);
 
 	/* Enter the auto-reconnect mode if needed */
@@ -464,7 +464,7 @@ static gboolean ctrl_watch_cb(GIOChannel *chan, GIOCondition cond, gpointer data
 	iconn->ctrl_io = NULL;
 
 	/* Close interrupt channel */
-	if (iconn->intr_io && !(cond & G_IO_NVAL))
+	if (iconn->intr_io)
 		g_io_channel_shutdown(iconn->intr_io, TRUE, NULL);
 
 	return FALSE;
@@ -813,10 +813,14 @@ static int connection_disconnect(struct input_conn *iconn, uint32_t flags)
 		return err;
 	}
 
-	/* Standard HID disconnect */
+	/* Don't auto-reconnect if disconnecting locally */
+	idev->reconnect_mode = RECONNECT_NONE;
+
+	/* Standard HID disconnect; disconnect control after intr has
+	   disconnected, if intr channel exists */
 	if (iconn->intr_io)
 		g_io_channel_shutdown(iconn->intr_io, TRUE, NULL);
-	if (iconn->ctrl_io)
+	else if (iconn->ctrl_io)
 		g_io_channel_shutdown(iconn->ctrl_io, TRUE, NULL);
 
 	ctl = socket(AF_BLUETOOTH, SOCK_RAW, BTPROTO_HIDP);

@@ -68,6 +68,7 @@ struct sink {
 	struct pending_request *connect;
 	struct pending_request *disconnect;
 	DBusConnection *conn;
+	gboolean immediate_disconnect;
 };
 
 struct sink_state_callback {
@@ -493,7 +494,8 @@ static DBusMessage *sink_disconnect(DBusConnection *conn,
 		return reply;
 	}
 
-	err = avdtp_close(sink->session, sink->stream, FALSE);
+	err = avdtp_close(sink->session, sink->stream,
+				sink->immediate_disconnect);
 	if (err < 0)
 		return btd_error_failed(msg, strerror(-err));
 
@@ -561,9 +563,56 @@ static DBusMessage *sink_get_properties(DBusConnection *conn,
 	if (state)
 		dict_append_entry(&dict, "State", DBUS_TYPE_STRING, &state);
 
+	/* ImmediateDisconnect */
+	dict_append_entry(&dict, "ImmediateDisconnect", DBUS_TYPE_BOOLEAN,
+				&sink->immediate_disconnect);
+
 	dbus_message_iter_close_container(&iter, &dict);
 
 	return reply;
+}
+
+static DBusMessage *sink_set_property(DBusConnection *conn,
+					DBusMessage *msg, void *data)
+{
+	struct audio_device *device = data;
+	struct sink *sink = device->sink;
+	const char *property;
+	DBusMessageIter iter;
+	DBusMessageIter sub;
+
+	if (!dbus_message_iter_init(msg, &iter))
+		return btd_error_invalid_args(msg);
+
+	if (dbus_message_iter_get_arg_type(&iter) != DBUS_TYPE_STRING)
+		return btd_error_invalid_args(msg);
+
+	dbus_message_iter_get_basic(&iter, &property);
+	dbus_message_iter_next(&iter);
+
+	if (dbus_message_iter_get_arg_type(&iter) != DBUS_TYPE_VARIANT)
+		return btd_error_invalid_args(msg);
+	dbus_message_iter_recurse(&iter, &sub);
+
+	if (g_str_equal("ImmediateDisconnect", property)) {
+		gboolean imm;
+
+		if (dbus_message_iter_get_arg_type(&sub) != DBUS_TYPE_BOOLEAN)
+			return btd_error_invalid_args(msg);
+
+		dbus_message_iter_get_basic(&sub, &imm);
+		if (sink->immediate_disconnect != imm) {
+			sink->immediate_disconnect = imm;
+
+			emit_property_changed(conn, dbus_message_get_path(msg),
+					DEVICE_INTERFACE, "ImmediateDisconnect",
+					DBUS_TYPE_BOOLEAN, &imm);
+		}
+
+		return dbus_message_new_method_return(msg);
+	}
+
+	return btd_error_invalid_args(msg);
 }
 
 static const GDBusMethodTable sink_methods[] = {
@@ -575,6 +624,9 @@ static const GDBusMethodTable sink_methods[] = {
 	{ GDBUS_METHOD("GetProperties",
 				NULL, GDBUS_ARGS({ "properties", "a{sv}" }),
 				sink_get_properties) },
+	{ GDBUS_METHOD("SetProperty",
+			GDBUS_ARGS({ "name", "s" }, { "value", "v" }), NULL,
+			sink_set_property) },
 	{ }
 };
 
@@ -718,7 +770,8 @@ gboolean sink_shutdown(struct sink *sink)
 	if (!sink->stream)
 		return FALSE;
 
-	if (avdtp_close(sink->session, sink->stream, FALSE) < 0)
+	if (avdtp_close(sink->session, sink->stream,
+				sink->immediate_disconnect) < 0)
 		return FALSE;
 
 	return TRUE;

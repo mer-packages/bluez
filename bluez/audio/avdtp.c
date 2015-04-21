@@ -3747,7 +3747,7 @@ int avdtp_close(struct avdtp *session, struct avdtp_stream *stream,
 		return -EINVAL;
 	}
 
-	if (immediate && session->req && stream == session->req->stream)
+	if (immediate)
 		return avdtp_abort(session, stream);
 
 	memset(&req, 0, sizeof(req));

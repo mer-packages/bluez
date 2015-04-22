@@ -233,6 +233,14 @@ Methods		void Connect()
 
 			Possible Errors: org.bluez.Error.InvalidArguments
 
+		void SetProperty(string name, variant value)
+
+			Changes the value of the specified property. Only
+			properties that are listed a read-write are changeable.
+			On success this will emit a PropertyChanged signal.
+
+			Possible Errors: org.bluez.Error.InvalidArguments
+
 Signals		void Connected() {deprecated}
 
 			Sent when a successful connection has been made to the
@@ -290,6 +298,11 @@ properties	string State [readonly]
 			Indicates if a stream is active to a A2DP sink on
 			the remote device.
 
+		boolean ImmediateDisconnect  [readwrite]
+
+			Indicates if a stream disconnection is done
+			immediately (with abort) or normally.
+
 AudioSource hierarchy
 =====================
 
@@ -342,7 +355,6 @@ properties	string State [readonly]
 			"connected" -> "disconnected"
 			"playing" -> "disconnected"
 				Disconnected from the remote device
-
 
 HeadsetGateway hierarchy
 ========================

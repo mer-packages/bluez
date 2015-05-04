@@ -58,6 +58,7 @@
 #include "dbus-common.h"
 #include "../src/adapter.h"
 #include "../src/device.h"
+#include "main.h"
 
 #define DC_TIMEOUT 3
 
@@ -1275,6 +1276,8 @@ static gboolean rfcomm_io_cb(GIOChannel *chan, GIOCondition cond,
 	size_t free_space;
 	int fd;
 
+	audio_wakelock_get();
+
 	if (cond & G_IO_NVAL)
 		return FALSE;
 
@@ -1357,6 +1360,8 @@ failed:
 static gboolean sco_cb(GIOChannel *chan, GIOCondition cond,
 			struct audio_device *device)
 {
+	audio_wakelock_get();
+
 	if (cond & G_IO_NVAL)
 		return FALSE;
 

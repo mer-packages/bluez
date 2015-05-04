@@ -105,6 +105,8 @@ static void sco_server_cb(GIOChannel *chan, GError *err, gpointer data)
 	char addr[18];
 	bdaddr_t src, dst;
 
+	audio_wakelock_get();
+
 	if (err) {
 		error("sco_server_cb: %s", err->message);
 		return;

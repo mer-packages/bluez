@@ -1666,6 +1666,8 @@ static DBusMessage *hs_stop(DBusConnection *conn, DBusMessage *msg,
 	struct headset *hs = device->headset;
 	DBusMessage *reply = NULL;
 
+	audio_wakelock_get();
+
 	if (hs->state < HEADSET_STATE_PLAY_IN_PROGRESS)
 		return btd_error_not_connected(msg);
 
@@ -1705,6 +1707,8 @@ static DBusMessage *hs_disconnect(DBusConnection *conn, DBusMessage *msg,
 	struct headset *hs = device->headset;
 	char hs_address[18];
 
+	audio_wakelock_get();
+
 	if (hs->state == HEADSET_STATE_DISCONNECTED)
 		return btd_error_not_connected(msg);
 
@@ -1743,6 +1747,8 @@ static DBusMessage *hs_connect(DBusConnection *conn, DBusMessage *msg,
 	struct headset *hs = device->headset;
 	int err;
 
+	audio_wakelock_get();
+
 	if (hs->state == HEADSET_STATE_CONNECTING)
 		return btd_error_in_progress(msg);
 	else if (hs->state > HEADSET_STATE_CONNECTING)
@@ -1771,6 +1777,8 @@ static DBusMessage *hs_ring(DBusConnection *conn, DBusMessage *msg,
 	struct headset *hs = device->headset;
 	DBusMessage *reply = NULL;
 	int err;
+
+	audio_wakelock_get();
 
 	if (hs->state < HEADSET_STATE_CONNECTED)
 		return btd_error_not_connected(msg);
@@ -1827,6 +1835,8 @@ static DBusMessage *hs_play(DBusConnection *conn, DBusMessage *msg,
 	struct audio_device *device = data;
 	struct headset *hs = device->headset;
 	int err;
+
+	audio_wakelock_get();
 
 	if (sco_hci) {
 		error("Refusing Headset.Play() because SCO HCI routing "
@@ -1919,6 +1929,8 @@ static DBusMessage *hs_set_gain(DBusConnection *conn,
 	struct headset *hs = device->headset;
 	DBusMessage *reply;
 	int err;
+
+	audio_wakelock_get();
 
 	if (hs->state < HEADSET_STATE_CONNECTED)
 		return btd_error_not_connected(msg);

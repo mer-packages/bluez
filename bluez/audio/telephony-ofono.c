@@ -46,6 +46,7 @@
 
 #include "log.h"
 #include "telephony.h"
+#include "main.h"
 
 enum net_registration_status {
 	NETWORK_REG_STATUS_HOME = 0x00,
@@ -970,6 +971,8 @@ static gboolean handle_vc_property_changed(DBusConnection *conn,
 	DBusMessageIter iter, sub;
 	const char *property, *state;
 
+	audio_wakelock_get();
+
 	DBG("path %s", obj_path);
 
 	dbus_message_iter_init(msg, &iter);
@@ -1470,6 +1473,8 @@ static gboolean handle_network_property_changed(DBusConnection *conn,
 	DBusMessageIter iter, variant;
 	const char *property;
 
+	audio_wakelock_get();
+
 	dbus_message_iter_init(msg, &iter);
 
 	if (dbus_message_iter_get_arg_type(&iter) != DBUS_TYPE_STRING) {
@@ -1514,6 +1519,8 @@ static gboolean handle_modem_property_changed(DBusConnection *conn,
 	DBusMessageIter iter, variant;
 	const char *property, *path;
 
+	audio_wakelock_get();
+
 	path = dbus_message_get_path(msg);
 
 	/* Ignore if modem already exist and paths doesn't match */
@@ -1545,6 +1552,8 @@ static gboolean handle_vcmanager_call_added(DBusConnection *conn,
 {
 	DBusMessageIter iter, properties;
 	const char *path = dbus_message_get_path(msg);
+
+	audio_wakelock_get();
 
 	/* Ignore call if modem path doesn't math */
 	if (g_strcmp0(modem_obj_path, path) != 0)
@@ -1588,6 +1597,8 @@ static gboolean handle_vcmanager_call_removed(DBusConnection *conn,
 {
 	const char *path = dbus_message_get_path(msg);
 
+	audio_wakelock_get();
+
 	/* Ignore call if modem path doesn't math */
 	if (g_strcmp0(modem_obj_path, path) != 0)
 		return TRUE;
@@ -1611,6 +1622,8 @@ static gboolean handle_manager_modem_added(DBusConnection *conn,
 {
 	DBusMessageIter iter, properties;
 	const char *path;
+
+	audio_wakelock_get();
 
 	if (modem_obj_path != NULL)
 		return TRUE;
@@ -1639,6 +1652,8 @@ static gboolean handle_manager_modem_removed(DBusConnection *conn,
 {
 	const char *path;
 
+	audio_wakelock_get();
+
 	if (!dbus_message_get_args(msg, NULL,
 				DBUS_TYPE_OBJECT_PATH, &path,
 				DBUS_TYPE_INVALID)) {
@@ -1659,6 +1674,8 @@ static gboolean statefs_batt_update(gint fd, GIOCondition cond, gpointer data)
 	gchar *endp = NULL;
 	guint64 val;
 	int r;
+
+	audio_wakelock_get();
 
 	if ((cond & G_IO_ERR) || (cond & G_IO_NVAL) || (cond & G_IO_HUP)) {
 		error("Failed to read battery charge.");
@@ -1886,6 +1903,8 @@ static void handle_service_connect(DBusConnection *conn, void *user_data)
 {
 	DBG("telephony-ofono: %s found", OFONO_BUS_NAME);
 
+	audio_wakelock_get();
+
 	send_method_call(OFONO_BUS_NAME, OFONO_PATH,
 				OFONO_MANAGER_INTERFACE, "GetModems",
 				get_modems_reply, NULL, DBUS_TYPE_INVALID);
@@ -1894,6 +1913,8 @@ static void handle_service_connect(DBusConnection *conn, void *user_data)
 static void handle_service_disconnect(DBusConnection *conn, void *user_data)
 {
 	DBG("telephony-ofono: %s exitted", OFONO_BUS_NAME);
+
+	audio_wakelock_get();
 
 	if (modem_obj_path)
 		modem_removed(modem_obj_path);

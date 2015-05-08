@@ -48,6 +48,8 @@
 #include "../src/adapter.h"
 #include "../src/manager.h"
 #include "../src/device.h"
+#include "../src/hcid.h"
+#include "../src/storage.h"
 
 #include "device.h"
 #include "manager.h"
@@ -2583,6 +2585,8 @@ static void avdtp_confirm_cb(GIOChannel *chan, gpointer data)
 
 	dev = manager_get_device(&src, &dst, FALSE);
 	if (!dev) {
+		uint32_t class;
+
 		dev = manager_get_device(&src, &dst, TRUE);
 		if (!dev) {
 			error("Unable to get audio device object for %s",
@@ -2590,6 +2594,12 @@ static void avdtp_confirm_cb(GIOChannel *chan, gpointer data)
 			goto drop;
 		}
 		btd_device_add_uuid(dev->btd_dev, ADVANCED_AUDIO_UUID);
+		if (!main_opts.reverse_sdp && read_remote_class(&src, &dst, &class) == 0) {
+			if ((class & (1 << 21)) && (class & (1 << 18)))
+				btd_device_add_uuid(dev->btd_dev, A2DP_SINK_UUID);
+			if ((class & (1 << 21)) && (class & (1 << 19)))
+				btd_device_add_uuid(dev->btd_dev, A2DP_SOURCE_UUID);
+		}
 	}
 
 	session->io = g_io_channel_ref(chan);

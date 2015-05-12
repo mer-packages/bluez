@@ -46,6 +46,7 @@
 #include "headset.h"
 #include "gateway.h"
 #include "avrcp.h"
+#include "main.h"
 
 #define MEDIA_TRANSPORT_INTERFACE "org.bluez.MediaTransport"
 
@@ -664,6 +665,8 @@ static DBusMessage *acquire(DBusConnection *conn, DBusMessage *msg,
 	const char *accesstype, *sender;
 	guint id;
 
+	audio_wakelock_get();
+
 	if (!dbus_message_get_args(msg, NULL,
 				DBUS_TYPE_STRING, &accesstype,
 				DBUS_TYPE_INVALID))
@@ -700,6 +703,8 @@ static DBusMessage *release(DBusConnection *conn, DBusMessage *msg,
 	struct media_owner *owner;
 	const char *accesstype, *sender;
 	struct media_request *req;
+
+	audio_wakelock_get();
 
 	if (!dbus_message_get_args(msg, NULL,
 				DBUS_TYPE_STRING, &accesstype,
@@ -827,6 +832,8 @@ static DBusMessage *set_property(DBusConnection *conn, DBusMessage *msg,
 	const char *property, *sender;
 	GSList *l;
 	int err;
+
+	audio_wakelock_get();
 
 	if (!dbus_message_iter_init(msg, &iter))
 		return btd_error_invalid_args(msg);

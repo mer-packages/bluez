@@ -70,6 +70,7 @@
 #include "sdpd.h"
 #include "telephony.h"
 #include "unix.h"
+#include "main.h"
 
 typedef enum {
 	HEADSET	= 1 << 0,
@@ -557,6 +558,8 @@ static void ag_confirm(GIOChannel *chan, gpointer data)
 	int perr;
 	GError *err = NULL;
 	uint8_t ch;
+
+	audio_wakelock_get();
 
 	bt_io_get(chan, BT_IO_RFCOMM, &err,
 			BT_IO_OPT_SOURCE_BDADDR, &src,

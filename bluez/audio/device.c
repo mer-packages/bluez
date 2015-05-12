@@ -58,6 +58,7 @@
 #include "gateway.h"
 #include "sink.h"
 #include "source.h"
+#include "main.h"
 
 #define AUDIO_INTERFACE "org.bluez.Audio"
 
@@ -526,6 +527,8 @@ static DBusMessage *dev_connect(DBusConnection *conn, DBusMessage *msg,
 	struct audio_device *dev = data;
 	struct dev_priv *priv = dev->priv;
 
+	audio_wakelock_get();
+
 	if (priv->state == AUDIO_STATE_CONNECTING)
 		return btd_error_in_progress(msg);
 	else if (priv->state == AUDIO_STATE_CONNECTED)
@@ -562,6 +565,8 @@ static DBusMessage *dev_disconnect(DBusConnection *conn, DBusMessage *msg,
 {
 	struct audio_device *dev = data;
 	struct dev_priv *priv = dev->priv;
+
+	audio_wakelock_get();
 
 	if (priv->state == AUDIO_STATE_DISCONNECTED)
 		return btd_error_not_connected(msg);

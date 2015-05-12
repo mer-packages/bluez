@@ -205,6 +205,7 @@ AC_DEFUN([AC_ARG_BLUEZ], [
 	gatt_enable=no
 	jolla_dbus_access_enable=no
 	jolla_did=no
+	jolla_wakelock=no
 
 	AC_ARG_ENABLE(optimization, AC_HELP_STRING([--disable-optimization], [disable code optimization]), [
 		optimization_enable=${enableval}
@@ -349,6 +350,10 @@ AC_DEFUN([AC_ARG_BLUEZ], [
 		jolla_did_enable=${enableval}
 	])
 
+	AC_ARG_ENABLE(jolla_wakelock, AC_HELP_STRING([--enable-jolla-wakelock], [compile with Jolla wakelock plugin]), [
+		jolla_wakelock_enable=${enableval}
+	])
+
 	misc_cflags=""
 	misc_ldflags=""
 
@@ -414,4 +419,5 @@ AC_DEFUN([AC_ARG_BLUEZ], [
 	AM_CONDITIONAL(GATTMODULES, test "${gatt_enable}" = "yes")
 	AM_CONDITIONAL(JOLLADBUSACCESSPLUGIN, test "${jolla_dbus_access_enable}" = "yes")
 	AM_CONDITIONAL(JOLLADIDPLUGIN, test "${jolla_did_enable}" = "yes")
+	AM_CONDITIONAL(JOLLAWAKELOCKPLUGIN, test "${jolla_wakelock_enable}" = "yes")
 ])

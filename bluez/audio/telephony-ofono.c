@@ -233,7 +233,7 @@ void telephony_device_connected(void *telephony_device)
 
 	DBG("telephony-ofono: device %p connected", telephony_device);
 
-	coming = find_vc_with_status(CALL_STATUS_ALERTING);
+	coming = find_vc_with_status(CALL_STATUS_INCOMING);
 	if (coming) {
 		if (find_vc_with_status(CALL_STATUS_ACTIVE))
 			telephony_call_waiting_ind(coming->number,

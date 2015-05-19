@@ -168,6 +168,12 @@ AC_DEFUN([AC_PATH_OUI], [
 	AC_DEFINE_UNQUOTED(OUIFILE, ["$ac_with_ouifile"], [Define the OUI file path])
 ])
 
+AC_DEFUN([AC_PATH_KEEPALIVE], [
+	PKG_CHECK_MODULES(KEEPALIVE, keepalive-glib, keepalive_found=yes, keepalive_found=no)
+	AC_SUBST(KEEPALIVE_CFLAGS)
+	AC_SUBST(KEEPALIVE_LIBS)
+])
+
 AC_DEFUN([AC_ARG_BLUEZ], [
 	debug_enable=no
 	optimization_enable=yes
@@ -419,5 +425,5 @@ AC_DEFUN([AC_ARG_BLUEZ], [
 	AM_CONDITIONAL(GATTMODULES, test "${gatt_enable}" = "yes")
 	AM_CONDITIONAL(JOLLADBUSACCESSPLUGIN, test "${jolla_dbus_access_enable}" = "yes")
 	AM_CONDITIONAL(JOLLADIDPLUGIN, test "${jolla_did_enable}" = "yes")
-	AM_CONDITIONAL(JOLLAWAKELOCKPLUGIN, test "${jolla_wakelock_enable}" = "yes")
+	AM_CONDITIONAL(JOLLAWAKELOCKPLUGIN, test "${jolla_wakelock_enable}" = "yes" && test "${keepalive_found}" = "yes")
 ])

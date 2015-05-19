@@ -21,12 +21,12 @@
  *
  */
 
-/* Plugin that implements wakelocks. Only one real wakelock is ever
-   used; API can create several "virtual" wakelocks which are mapped
-   on the real one: 
+/* Plugin that implements wakelocks using nemomobile-keepalive
+   library. Any number of virtual wakelocks can be defined, mapping to
+   one cpu keepalive object as follows:
 
-   - no virtual wakelock active -> real wakelock not active
-   - at least one virtual wakelock active -> real wakelock active
+   - no virtual wakelock active -> cpu keepalive not active
+   - at least one virtual wakelock active -> cpu keepalive active
 */
 
 #ifdef HAVE_CONFIG_H
@@ -41,14 +41,11 @@
 #include <errno.h>
 #include <glib.h>
 
+#include <keepalive-glib/keepalive-cpukeepalive.h>
+
 #include "plugin.h"
 #include "log.h"
 #include "wakelock.h"
-
-#define LOCK_FILE	"/sys/power/wake_lock"
-#define UNLOCK_FILE	"/sys/power/wake_unlock"
-#define LOCK_NAME	"bluetoothd"
-#define LOCK_NAME_LEN   10
 
 struct wakelock {
 	gchar *name;
@@ -60,37 +57,9 @@ static GSList *locks = NULL;
 
 static gboolean initialized = FALSE;
 
-static gboolean real_lock_acquired = FALSE;
+static cpukeepalive_t *keepalive = NULL;
 
-static int sysfs_write(const gchar *file, const gchar *data_ptr, gsize data_len,
-			gboolean silent)
-{
-	int fd = -1;
-	int r;
-
-	fd = open(file, O_WRONLY);
-	if (fd < 0) {
-		if (!silent)
-			error("Failed to open: %s(%d)", strerror(errno), errno);
-		r = -errno;
-		goto out;
-	}
-
-	if (write(fd, data_ptr, data_len) != data_len) {
-		if (!silent)
-			error("Atomic write failed");
-		r = -EIO;
-		goto out;
-	}
-
-	r = 0;
-
-out:
-	if (fd >= 0)
-		close(fd);
-
-	return r;
-}
+static gboolean keepalive_started = FALSE;
 
 static int jolla_wakelock_acquire(struct wakelock *lock)
 {
@@ -103,18 +72,12 @@ static int jolla_wakelock_acquire(struct wakelock *lock)
 	if (lock->stale)
 		return -EBADF;
 
-	if (real_lock_acquired)
+	if (keepalive_started)
 		goto done;
 
-	r = sysfs_write(LOCK_FILE, LOCK_NAME, LOCK_NAME_LEN, FALSE);
-	if (r < 0) {
-		error("Failed to acquire real lock for lock: %p, name %s",
-			lock, lock->name);
-		return r;
-	}
-
-	real_lock_acquired = TRUE;
-	DBG("Real wakelock acquired for lock: %p, name %s", lock, lock->name);
+	cpukeepalive_start(keepalive);
+	keepalive_started = TRUE;
+	DBG("Keepalive started for lock: %p, name %s", lock, lock->name);
 
 done:
 	lock->acquisitions++;
@@ -144,20 +107,16 @@ static int jolla_wakelock_release(struct wakelock *lock)
 	if (lock->acquisitions)
 		goto done;
 
-	/* See if this was the last active lock, only release real lock if so */
+	/* See if this was the last active lock, only stop keepalive if so */
 	for (l = locks; l; l = l->next) {
 		struct wakelock *check = l->data;
 		if (check->acquisitions)
 			goto done;
 	}
 
-	r = sysfs_write(UNLOCK_FILE, LOCK_NAME, LOCK_NAME_LEN, FALSE);
-	if (r < 0)
-		warn("Failed to release real lock for lock: %p, name: %s",
-			lock, lock->name);
-
-	real_lock_acquired = FALSE;
-	DBG("Real wakelock released for lock: %p, name %s", lock, lock->name);
+	cpukeepalive_stop(keepalive);
+	keepalive_started = FALSE;
+	DBG("Keepalive stopped for lock: %p, name %s", lock, lock->name);
 
 done:
 	DBG("lock: %p, name %s released", lock, lock->name);
@@ -221,11 +180,10 @@ static void jolla_wakelock_exit(void)
 	}
 
 	wakelock_plugin_unregister();
+	cpukeepalive_unref(keepalive);
+	keepalive = NULL;
 	initialized = FALSE;
 	DBG("Wakelocks uninitialized");
-
-	/* Sanity: force release just in case our internal state got messed up */
-	sysfs_write(UNLOCK_FILE, LOCK_NAME, LOCK_NAME_LEN, TRUE);
 }
 
 static GKeyFile *load_config(const char *file)
@@ -276,13 +234,16 @@ static int jolla_wakelock_init(void)
 	if (!use_wakelocks) /* No need to initialize or uninitialize */
 		return 0;
 
-	/* Sanity: release any left over wakelock from previous processes
-	   (e.g. after a crash-restart) */
-	sysfs_write(UNLOCK_FILE, LOCK_NAME, LOCK_NAME_LEN, TRUE);
+	keepalive = cpukeepalive_new();
+	if (!keepalive)
+		return -EIO;
 
 	r = wakelock_plugin_register("jolla-wakelock", &table);
-	if (r < 0)
+	if (r < 0) {
+		cpukeepalive_unref(keepalive);
+		keepalive = NULL;
 		return r;
+	}
 
 	initialized = TRUE;
 	DBG("Wakelocks initialized");

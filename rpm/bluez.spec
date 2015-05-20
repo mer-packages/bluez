@@ -39,7 +39,6 @@ BuildRequires:  pkgconfig(check)
 BuildRequires:  bison
 BuildRequires:  flex
 BuildRequires:  readline-devel
-BuildRequires:  pkgconfig(keepalive-glib)
 
 %description
 Utilities for use in Bluetooth applications:

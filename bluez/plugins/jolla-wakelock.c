@@ -40,8 +40,7 @@
 #include <string.h>
 #include <errno.h>
 #include <glib.h>
-
-#include <keepalive-glib/keepalive-cpukeepalive.h>
+#include <dlfcn.h>
 
 #include "plugin.h"
 #include "log.h"
@@ -53,6 +52,13 @@ struct wakelock {
 	gboolean stale;
 };
 
+typedef struct cpukeepalive_t cpukeepalive_t;
+static cpukeepalive_t *(*cpukeepalive_new)(void) = NULL;
+static void (*cpukeepalive_unref)(cpukeepalive_t *self) = NULL;
+static void (*cpukeepalive_start)(cpukeepalive_t *self) = NULL;
+static void (*cpukeepalive_stop)(cpukeepalive_t *self) = NULL;
+static void *cpukeepalive_lib = NULL;
+
 static GSList *locks = NULL;
 
 static gboolean initialized = FALSE;
@@ -63,8 +69,6 @@ static gboolean keepalive_started = FALSE;
 
 static int jolla_wakelock_acquire(struct wakelock *lock)
 {
-	int r;
-
 	DBG("lock: %p, name: %s, acquisitions: %u, stale: %s",
 		lock, lock->name, lock->acquisitions,
 		lock->stale ? "yes" : "no");
@@ -75,7 +79,7 @@ static int jolla_wakelock_acquire(struct wakelock *lock)
 	if (keepalive_started)
 		goto done;
 
-	cpukeepalive_start(keepalive);
+	(*cpukeepalive_start)(keepalive);
 	keepalive_started = TRUE;
 	DBG("Keepalive started for lock: %p, name %s", lock, lock->name);
 
@@ -89,7 +93,6 @@ done:
 static int jolla_wakelock_release(struct wakelock *lock)
 {
 	GSList *l;
-	int r;
 
 	DBG("lock: %p, name: %s, acquisitions: %u, stale: %s",
 		lock, lock->name, lock->acquisitions,
@@ -114,7 +117,7 @@ static int jolla_wakelock_release(struct wakelock *lock)
 			goto done;
 	}
 
-	cpukeepalive_stop(keepalive);
+	(*cpukeepalive_stop)(keepalive);
 	keepalive_started = FALSE;
 	DBG("Keepalive stopped for lock: %p, name %s", lock, lock->name);
 
@@ -180,8 +183,10 @@ static void jolla_wakelock_exit(void)
 	}
 
 	wakelock_plugin_unregister();
-	cpukeepalive_unref(keepalive);
+	(*cpukeepalive_unref)(keepalive);
 	keepalive = NULL;
+	dlclose(cpukeepalive_lib);
+	cpukeepalive_lib = NULL;
 	initialized = FALSE;
 	DBG("Wakelocks uninitialized");
 }
@@ -234,20 +239,53 @@ static int jolla_wakelock_init(void)
 	if (!use_wakelocks) /* No need to initialize or uninitialize */
 		return 0;
 
-	keepalive = cpukeepalive_new();
-	if (!keepalive)
-		return -EIO;
+	cpukeepalive_lib = dlopen("libkeepalive-glib.so.1", RTLD_NOW);
+	if (!cpukeepalive_lib) {
+		DBG("dlopen() failed: %s", dlerror());
+		r = -EIO;
+		goto failed;
+	}
+	dlerror();
+
+	cpukeepalive_new = dlsym(cpukeepalive_lib, "cpukeepalive_new");
+	cpukeepalive_unref = dlsym(cpukeepalive_lib, "cpukeepalive_unref");
+	cpukeepalive_start = dlsym(cpukeepalive_lib, "cpukeepalive_start");
+	cpukeepalive_stop = dlsym(cpukeepalive_lib, "cpukeepalive_stop");
+	if (!cpukeepalive_new || !cpukeepalive_unref || !cpukeepalive_start ||
+							!cpukeepalive_stop) {
+		DBG("dlsym() failed: %s", dlerror());
+		r = -ENOENT;
+		goto failed;
+	}
+
+	keepalive = (*cpukeepalive_new)();
+	if (!keepalive) {
+		r = -EIO;
+		goto failed;
+	}
 
 	r = wakelock_plugin_register("jolla-wakelock", &table);
-	if (r < 0) {
-		cpukeepalive_unref(keepalive);
-		keepalive = NULL;
-		return r;
-	}
+	if (r < 0)
+		goto failed;
 
 	initialized = TRUE;
 	DBG("Wakelocks initialized");
 	return 0;
+
+failed:
+	if (keepalive) {
+		(*cpukeepalive_unref)(keepalive);
+		keepalive = NULL;
+	}
+
+	if (cpukeepalive_lib) {
+		dlclose(cpukeepalive_lib);
+		cpukeepalive_lib = NULL;
+	}
+
+	warn("Failed to initialize wakelocks");
+
+	return r;
 }
 
 BLUETOOTH_PLUGIN_DEFINE(jolla_wakelock, VERSION,

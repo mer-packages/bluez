@@ -324,15 +324,14 @@ src_bluetoothd_SOURCES = $(gdbus_sources) $(builtin_sources) \
 			src/oob.h src/oob.c src/eir.h src/eir.c \
 			src/wakelock.h src/wakelock.c
 src_bluetoothd_LDADD = lib/libbluetooth-private.la @GLIB_LIBS@ @DBUS_LIBS@ \
-						@KEEPALIVE_LIBS@ -ldl -lrt
+								-ldl -lrt
 src_bluetoothd_LDFLAGS = $(AM_LDFLAGS) -Wl,--export-dynamic \
 				-Wl,--version-script=$(srcdir)/src/bluetooth.ver
 
 src_bluetoothd_DEPENDENCIES = lib/libbluetooth-private.la
 
 src_bluetoothd_CFLAGS = $(AM_CFLAGS) -DBLUETOOTH_PLUGIN_BUILTIN \
-					-DPLUGINDIR=\""$(build_plugindir)"\" \
-					@KEEPALIVE_CFLAGS@
+					-DPLUGINDIR=\""$(build_plugindir)"\"
 
 src_bluetoothd_SHORTNAME = bluetoothd
 

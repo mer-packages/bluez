@@ -289,6 +289,11 @@ builtin_modules += jolla_wakelock
 builtin_sources += plugins/jolla-wakelock.c
 endif
 
+if JOLLALOGCONTROLPLUGIN
+builtin_modules += jolla_logcontrol
+builtin_sources += plugins/jolla-logcontrol.c
+endif
+
 if MAINTAINER_MODE
 plugin_LTLIBRARIES += plugins/external-dummy.la
 plugins_external_dummy_la_SOURCES = plugins/external-dummy.c

@@ -206,6 +206,7 @@ AC_DEFUN([AC_ARG_BLUEZ], [
 	jolla_dbus_access_enable=no
 	jolla_did=no
 	jolla_wakelock=no
+	jolla_logcontrol=no
 
 	AC_ARG_ENABLE(optimization, AC_HELP_STRING([--disable-optimization], [disable code optimization]), [
 		optimization_enable=${enableval}
@@ -354,6 +355,10 @@ AC_DEFUN([AC_ARG_BLUEZ], [
 		jolla_wakelock_enable=${enableval}
 	])
 
+	AC_ARG_ENABLE(jolla_logcontrol, AC_HELP_STRING([--enable-jolla-logcontrol], [compile with Jolla logcontrol plugin]), [
+		jolla_logcontrol_enable=${enableval}
+	])
+
 	misc_cflags=""
 	misc_ldflags=""
 
@@ -420,4 +425,5 @@ AC_DEFUN([AC_ARG_BLUEZ], [
 	AM_CONDITIONAL(JOLLADBUSACCESSPLUGIN, test "${jolla_dbus_access_enable}" = "yes")
 	AM_CONDITIONAL(JOLLADIDPLUGIN, test "${jolla_did_enable}" = "yes")
 	AM_CONDITIONAL(JOLLAWAKELOCKPLUGIN, test "${jolla_wakelock_enable}" = "yes")
+	AM_CONDITIONAL(JOLLALOGCONTROLPLUGIN, test "${jolla_logcontrol_enable}" = "yes")
 ])

@@ -16,6 +16,7 @@ Group:      Applications/System
 License:    GPLv2+
 URL:        http://www.bluez.org/
 Source0:    http://www.kernel.org/pub/linux/bluetooth/%{name}-%{version}.tar.gz
+Source1:    bluez.tracing
 Requires:   bluez-libs = %{version}
 Requires:   dbus >= 0.60
 Requires:   hwdata >= 0.215
@@ -130,6 +131,14 @@ Provides:   bluez-configs
 %description configs-mer
 This package provides default configs for bluez
 
+%package tracing
+Summary:    Configuration for bluez to enable tracing
+Group:      Development/Tools
+Requires:   %{name} = %{version}-%{release}
+
+%description tracing
+Will enable tracing for BlueZ
+
 %prep
 %setup -q -n %{name}-%{version}/%{name}
 
@@ -185,6 +194,10 @@ install -d -m 0755 $RPM_BUILD_ROOT/%{_localstatedir}/lib/bluetooth
 for CONFFILE in audio input network serial ; do
 install -v -m644 ${CONFFILE}/${CONFFILE}.conf ${RPM_BUILD_ROOT}%{_sysconfdir}/bluetooth/${CONFFILE}.conf
 done
+
+mkdir -p %{buildroot}%{_sysconfdir}/tracing/bluez/
+cp -a %{SOURCE1} %{buildroot}%{_sysconfdir}/tracing/bluez/
+
 # << install post
 
 
@@ -300,3 +313,8 @@ systemctl daemon-reload ||:
 # >> files configs-mer
 %config(noreplace) %{_sysconfdir}/bluetooth/*
 # << files configs-mer
+
+%files tracing
+%defattr(-,root,root,-)
+%dir %{_sysconfdir}/tracing/bluez
+%config %{_sysconfdir}/tracing/bluez/bluez.tracing

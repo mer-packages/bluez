@@ -40,6 +40,7 @@ BuildRequires:  pkgconfig(check)
 BuildRequires:  bison
 BuildRequires:  flex
 BuildRequires:  readline-devel
+Provides:   bluetooth-daemon
 
 %description
 Utilities for use in Bluetooth applications:

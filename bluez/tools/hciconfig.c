@@ -37,6 +37,9 @@
 #include <sys/param.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 #include <bluetooth/bluetooth.h>
 #include <bluetooth/hci.h>
@@ -1833,10 +1836,43 @@ static void cmd_unblock(int ctl, int hdev, char *opt)
 	hci_close_dev(dd);
 }
 
+static char *sysfs_busname(struct hci_dev_info *di)
+{
+	char file[PATH_MAX];
+	char buf[16];
+	int fd = -1;
+	char *ret = NULL;
+	ssize_t l;
+
+	if (snprintf(file, sizeof(file), "/sys/class/bluetooth/hci%d/bus",
+			di->dev_id) >= sizeof(file))
+		goto out;
+
+	fd = open(file, O_RDONLY);
+	if (fd < 0)
+		goto out;
+
+	memset(buf, 0, sizeof(buf));
+	l = read(fd, buf, sizeof(buf) - 1);
+	if (l < 0)
+		goto out;
+
+	if (l && buf[l - 1] == '\n')
+		buf[l - 1] = '\0';
+
+	ret = strdup(buf);
+
+out:
+	if (fd >= 0)
+		close(fd);
+	return ret;
+}
+
 static void print_dev_hdr(struct hci_dev_info *di)
 {
 	static int hdr = -1;
 	char addr[18];
+	char *busname = NULL;
 
 	if (hdr == di->dev_id)
 		return;
@@ -1844,12 +1880,19 @@ static void print_dev_hdr(struct hci_dev_info *di)
 
 	ba2str(&di->bdaddr, addr);
 
+	busname = ((di->type & 0x0f) <= HCI_MAX_BUS)
+		? hci_bustostr(di->type & 0x0f)
+		: sysfs_busname(di);
+
 	printf("%s:\tType: %s  Bus: %s\n", di->name,
 					hci_typetostr(di->type >> 4),
-					hci_bustostr(di->type & 0x0f));
+					busname ? busname : "UNKNOWN");
 	printf("\tBD Address: %s  ACL MTU: %d:%d  SCO MTU: %d:%d\n",
 					addr, di->acl_mtu, di->acl_pkts,
 						di->sco_mtu, di->sco_pkts);
+
+	if (busname && (di->type & 0x0f) > HCI_MAX_BUS)
+		free(busname);
 }
 
 static void print_dev_info(int ctl, struct hci_dev_info *di)

@@ -801,7 +801,8 @@ static gboolean init_adapter(int index)
 	if (mode == MODE_OFF) {
 		/* We might have a set local name op pending completion;
 		   force storing a name to the adapter before turning off */
-		update_name(index, dev->name);
+		if (g_strcmp0(dev->name, ""))
+			update_name(index, dev->name);
 		hciops_power_off(index);
 		goto done;
 	}

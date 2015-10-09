@@ -743,8 +743,14 @@ int adapter_set_name(struct btd_adapter *adapter, const char *name)
 
 	if (adapter->up) {
 		int err = adapter_ops->set_name(adapter->dev_id, maxname);
-		if (err < 0)
-			return err;
+		if (err < 0) {
+			if (err == -ENETDOWN) {
+				/* Adapter actually down, handle as below */
+				adapter_name_changed(adapter, maxname);
+			} else {
+				return err;
+			}
+		}
 	} else {
 		/* There won't be any HCI response to trigger a name
 		   change signal when adapter is down, so force it */
